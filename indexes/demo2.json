@@ -1,0 +1,8 @@
+{
+   "name": "demo2",
+   "datatype": "event",
+   "searchableDays": 90,
+   "maxDataSizeMB": 1024,
+   "totalEventCount": "0",
+   "totalRawSizeMB": "0"
+}

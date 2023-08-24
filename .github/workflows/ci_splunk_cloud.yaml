@@ -1,0 +1,703 @@
+name: CI - Validation and Checking
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the main branch
+  push:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  # First Job that will end up here is check credentials and stack before starting, validate json that everything hangs off at the moment will move to the ipAllow list job
+  #
+  # Pipeline job order
+  #
+  # acs_stack_health_and_authentication -> validate_json -> indexManagement
+  # acs_stack_health_and_authentication -> validate_json -> ipAllowManagement
+  # acs_stack_health_and_authentication -> validate_json -> HECtokenManagement
+  # acs_stack_health_and_authentication -> splunkbase_app_management
+  # acs_stack_health_and_authentication -> private_app_management
+  #
+  #acs_stack_health_and_authentication:
+  #  runs-on: ubuntu-latest
+  #  steps:
+  validate_json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Validate IP Allow List JSON
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /workflow_support/ipallow_schema.json
+          INPUT_JSONS: /ipAllow/hec.json,/ipAllow/s2s.json,/ipAllow/search-api.json,/ipAllow/search-ui.json
+      - name: Validate Index JSON
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /workflow_support/index_schema.json
+          INPUT_JSONS: /indexes/pipeline.json
+      - name: Validate HEC JSON
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /workflow_support/hec_schema.json
+          INPUT_JSONS: /hecTokens/pipeline-token.json
+  splunkbase_app_management:
+    needs: validate_json
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate with splunk API service
+        id: authenticate-splunkbase
+        env:
+          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          export splunkbase_token=$(curl -sX POST --form "username=\"${splunkbase_user}\"" --form "password=\"${splunkbase_password}\"" 'https://splunkbase.splunk.com/api/account:login'| sed -ne 's/.*<id>\(.*\)<\/id>/\1/p')
+          if [[ ${splunkbase_token} == "" ]]
+          then
+            echo "token: ${splunkbase_token}"
+            exit 1
+          else
+            #echo "::set-output name=token::${splunkbase_token}"
+            echo ${splunkbase_token} > /tmp/splunkbase_token
+            echo "splunkbase_token=${splunkbase_token}" >> $GITHUB_OUTPUT
+          fi
+      - name: Check out repo code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Install jq for JSON parsing
+        run: sudo apt install -y jq
+      - name: Gather installed Splunkbase apps from stack
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          # output defaults to 30 apps upto a maximum of 100, so we need to handle more than 100 splunkbase apps here...
+          curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria?splunkbase=true&count=100" \
+          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_stack_apps.json
+          cat /tmp/current_stack_apps.json
+      - name: Install new Splunkbase apps
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+          splunkbase_token: ${{steps.authenticate-splunkbase.outputs.splunkbase_token}}
+        run: |
+          # gets splunkbase token from previous task, this is to try and minimise throttling...  Need to change this to something that traverses jobs and not just tasks...
+          for app in $(jq '.apps[].splunkbaseID' splunkbaseApps.json | sed 's/\"//g')
+          do
+            export installed_appIDs=$(jq '.apps[].splunkbaseID' /tmp/current_stack_apps.json| sed 's/\"//g')
+            if [[ "${installed_appIDs}" != *"${app}"* ]]; then 
+              echo "Installing app: ${app}"
+              # check if appID is valid somehow before trying to install?
+              export license=$(jq ".apps[]| select(.splunkbaseID==\"${app}\")|.license" splunkbaseApps.json| sed 's/\"//g')
+              echo ${license}
+              # URL currently set to staging below
+              response=$(curl -sX POST "https:/${acs}/${stack}/adminconfig/v2/apps/victoria?splunkbase=true" \
+              --header "X-Splunkbase-Authorization: ${splunkbase_token}" \
+              --header "Content-Type: application/x-www-form-urlencoded" \
+              --header "ACS-Licensing-Ack: ${license}" \
+              --header "Authorization: Bearer ${stack_jwt}" \
+              --data-urlencode "splunkbaseID=${app}")
+              echo ${response}
+              if [[ $(echo ${response}| jq -r '.code') == "400-bad-request" ]]; then
+                echo "[Error] - 400 Response to app install (${app})"
+                echo "---"
+                echo "$(echo ${response}| jq -r '.message')"
+                echo "---"
+                exit 1
+              fi
+            fi
+          done
+      - name: Update List of installed Splunkbase apps from stack
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          # output defaults to 30 apps upto a maximum of 100, so we need to handle more than 100 splunkbase apps here...
+          curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria?splunkbase=true&count=100" \
+          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_stack_apps.json
+          cat /tmp/current_stack_apps.json
+      - name: Upgrade Existing apps
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+          splunkbase_token: ${{steps.authenticate-splunkbase.outputs.splunkbase_token}}
+        run: |
+          #export splunkbase_token=$(cat /tmp/splunkbase_token)
+
+          for gitappID in $(jq '.apps[].splunkbaseID' splunkbaseApps.json)
+          do
+            # git version
+            localAppVersion=$(jq ".apps[]| select(.splunkbaseID==${gitappID})| .version" splunkbaseApps.json)
+
+            # currently installed apps:
+            remoteAppVersion=$(jq ".apps[]| select(.splunkbaseID==${gitappID})| .version" /tmp/current_stack_apps.json)
+
+            if [[ ${localAppVersion} != ${remoteAppVersion} ]]
+            then
+              appName=$(jq ".apps[]| select(.splunkbaseID==${gitappID})|.appName" splunkbaseApps.json|sed 's/"//g')
+              appLicense=$(jq ".apps[]| select(.splunkbaseID==${gitappID})|.license" splunkbaseApps.json|sed 's/"//g')
+              appVersion=$(echo ${localAppVersion}|sed 's/"//g')
+              echo "[${appName}] - current: ${remoteAppVersion} -> Update to: ${localAppVersion}"
+
+              curl_response=$(curl -s -X PATCH "https://${acs}/${stack}/adminconfig/v2/apps/victoria/${appName}" \
+              --header "X-Splunkbase-Authorization: ${splunkbase_token}" \
+              --header 'Content-Type: application/x-www-form-urlencoded' \
+              --header "ACS-Licensing-Ack: ${appLicense}" \
+              --header "Authorization: Bearer ${stack_jwt}" \
+              --data-urlencode "version=${appVersion}")
+              echo ${curl_response}
+              if [[ $(echo ${curl_response} | jq '.code' ) == '"400-bad-request"' ]]
+              then
+                echo "Check this is a valid version on Splunkbase for ${appName}"
+                exit 1
+              fi
+            fi
+          done
+      - name: Uninstall Splunkbase Apps that are not in splunkbaseApps.json
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          splunkbaseAppsList=$(jq '.apps[].splunkbaseID' splunkbaseApps.json)
+          defaultAppsList=$(jq '.apps[].splunkbaseID' workflow_support/splunkbase_exclusion.json)
+          for installedApp in $(jq '.apps[].splunkbaseID' /tmp/current_stack_apps.json)
+          do
+            # | sed 's/\"//g'
+            if [[ "${splunkbaseAppsList}" != *"${installedApp}"* ]]
+            then 
+              if [[ "${defaultAppsList}" != *"${installedApp}"* ]] 
+              then
+                appToDelete=$(jq ".apps[]| select(.splunkbaseID==${installedApp})|.appID" /tmp/current_stack_apps.json| sed 's/\"//g')
+                curl -sX DELETE "https:/${acs}/${stack}/adminconfig/v2/apps/victoria/${appToDelete}" \
+                --header "Authorization: Bearer ${stack_jwt}"
+              fi
+            else
+              echo "Leaving installed app untouched: ${installedApp}"
+            fi
+          done
+  private_app_management:
+    needs: validate_json
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Authenticate with splunk API service
+        id: authenticate-splunk-api-service
+        env:
+          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          splunk_api_session=$(curl -s -k -u ${splunkbase_user}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+          if [[ $(echo ${splunk_api_session} | jq ".status_code") -eq 200 ]]
+          then 
+            echo "[success] - Obtained Auth Token from Splunk API service"
+            echo ${splunk_api_session} | jq ".data.token" | sed 's/\"//g' > /tmp/appInspect_token
+            echo "appInspect_token=$(cat /tmp/appInspect_token)" >> $GITHUB_OUTPUT
+          else
+            echo "[failed] - Something happened that resulted in a non-200 response"
+            echo "${splunk_api_session}"
+            exit 1
+          fi
+      - name: Gather installed private apps from stack
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria" \
+          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_private_apps.json
+      - name: 'Upload Current Private Apps'
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: current_private_apps.json
+          path: /tmp/current_private_apps.json
+          retention-days: 5
+      - name: Fresh Install App Deploy
+        id: fresh-install-app-deploy
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+        run: |
+          mkdir -p /tmp/privateApps
+          # Identify when this is a new stack with no private apps on and deploy them
+          # if app in private apps folder not present on target stack copy it to /tmp/privateApps for deployment
+          for app in $(ls privateApps)
+          do
+            if [[ ! "$(jq -r '.apps[].name' /tmp/current_private_apps.json)" =~ "${app}"  ]]
+            then
+              echo "${app} not present on target"
+              cp -rp privateApps/${app} /tmp/privateApps
+              echo "deployExisting=true"  >> $GITHUB_OUTPUT
+            fi
+          done
+          echo "${deployExisting}"
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+        with:
+          files: |
+            privateApps/**
+      - name: Identify Private Apps with Changes in git
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: |
+          mkdir -p /tmp/privateApps
+          export appsToVet=$(for modifiedFile in ${{ steps.changed-files.outputs.all_modified_files }};do echo ${modifiedFile}|grep "privateApps"| awk -F\/ '{print $2}';done| uniq)
+          for app in ${appsToVet} 
+          do
+            cp -rp privateApps/${app} /tmp/privateApps
+          done
+          echo "---"
+          ls -l /tmp/privateApps
+      - name: generate commit hash
+        id: commit
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        uses: pr-mpt/actions-commit-hash@v2
+      - name: Append Commit to App
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        env:
+          commit_short: ${{ steps.commit.outputs.short }}
+        run: |
+          for appconf in $(find /tmp/privateApps -type f -name app.conf)
+          do
+            sed -i -e "s/^version[[:space:]]*=[[:space:]]*\(.*\)/version = \1_${commit_short}/g" ${appconf}
+            echo "---"
+            cat ${appconf}
+          done
+      - name: Check for local directories
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        run: |
+          if [[ $(find /tmp/appPackages -type d -name local | wc -l) -gt 0 ]]
+          then
+            echo "Local Directories Present"
+            exit 1
+          fi
+      - name: Package Apps for validation
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        run: |
+          mkdir /tmp/privatePackages
+          cd /tmp/privateApps
+          for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| tail -n +2)
+          do
+            # <TO DO> this section still runs even if no apps need packaging for validation, will have to fix that
+            tar -zcf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
+          done
+      - name: Run Apps through App Inspect
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          appinspect_token: ${{ steps.authenticate-splunk-api-service.outputs.appInspect_token}}
+        run: |
+          mkdir -p /tmp/appinspect_failures
+          cd /tmp/privatePackages
+          for candidateApp in $(ls)
+          do
+            echo "[AppInspect] - ${candidateApp}"
+            AppRequest=$(curl -sX POST 'https://appinspect.splunk.com/v1/app/validate' \
+            --header "Authorization: Bearer ${appinspect_token}" \
+            --header "Cache-Control: no-cache" \
+            --form "app_package=@\"${candidateApp}\"" \
+            --form 'included_tags="private_app"')
+            # Extract request
+            requestURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"status\")|.href"| sed 's/\"//g')
+            reportURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"report\")|.href"| sed 's/\"//g')
+            appInspectStatus=$(curl -sX GET "https://appinspect.splunk.com${requestURL}" --header "Authorization: Bearer ${appinspect_token}")
+            
+            # Loop until request complete or timeout
+            LOOPCOUNTER=0
+            # 60 iterations of 15 seconds is 15 minutes for timeout
+            while [[ $(echo ${appInspectStatus} | jq ".status" | sed 's/\"//g') == "PROCESSING" && ${LOOPCOUNTER} -lt 60 ]]
+            do
+              sleep 15
+              appInspectStatus=$(curl -sX GET "https://appinspect.splunk.com${requestURL}" --header "Authorization: Bearer ${appinspect_token}")
+              let LOOPCOUNTER=LOOPCOUNTER+1
+            done
+
+            if [[ ${LOOPCOUNTER} -eq 60 ]]
+            then
+              echo "[ERROR] - Timeout occurred validating ${candidateApp}"
+              exit 1
+            fi
+
+            if [[ $(echo ${appInspectStatus} | jq ".status" | sed 's/\"//g') == "SUCCESS" ]]
+            then
+              if [[ $(echo ${appInspectStatus} | jq ".info.error") -eq 0 && $(echo ${appInspectStatus} | jq ".info.failure") -eq 0 && $(echo ${appInspectStatus} | jq ".info.manual_check") -eq 0 ]]
+              then
+                echo ${appInspectStatus}
+              else
+                echo "[Error] - App Failed Appinspect, see report for more information (${candidateApp})"
+                curl -sX GET "https://appinspect.splunk.com${reportURL}" --header "Authorization: Bearer ${appinspect_token}" > /tmp/appinspect_failures/${candidateApp}.json
+                exit 1
+              fi
+            else
+              echo "[Error] - Appinspect went to unknown state while validating ${candidateApp}"
+              exit 1
+            fi
+          done
+      - name: 'Upload AppInspect Failures'
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: appInspectFailureReports
+          path: /tmp/appinspect_failures/
+          retention-days: 5
+      - name: Install or Upgrade Apps
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+          appinspect_token: ${{ steps.authenticate-splunk-api-service.outputs.appInspect_token }}
+        run: |
+          #export acs="staging.admin.splunk.com"
+          #export appinspect_token=$(cat /tmp/appInspect_token)
+          cd /tmp/privatePackages
+          for candidateApp in $(ls)
+          do
+            appInstallation=$(curl -sX POST "https://${acs}/${stack}/adminconfig/v2/apps/victoria" \
+            --header "X-Splunk-Authorization: ${appinspect_token}" \
+            --header "Authorization: Bearer ${stack_jwt}" \
+            --header 'ACS-Legal-Ack: Y' \
+            --data-binary "@${candidateApp}")
+            echo ${appInstallation}
+          done
+  indexManagement:
+    needs: validate_json
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Get Current Indexes
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          curl -s "https://${acs}/${stack}/adminconfig/v2/indexes" --header "Authorization: Bearer ${stack_jwt}" -o /tmp/currentIndexConfiguration.json
+      - name: 'Upload Current Index Configuration'
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: currentIndexConfiguration.json
+          path: /tmp/currentIndexConfiguration.json
+          retention-days: 5
+      - name: Create New Indexes
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          # get list of indexes in git, compare with list current installed indexes and deploy anything that does not currently exist in CLoud Stack
+          indexList=""
+          cd $GITHUB_WORKSPACE/indexes
+          for indexFile in $(ls *.json)
+          do
+            indexList="${indexList} $(jq '.name' ${indexFile})"
+          done
+
+          cloudList=$(jq '.[].name' /tmp/currentIndexConfiguration.json)
+
+          for index in ${indexList}
+          do
+            if [[ "${cloudList}" != *"${index}"* ]]
+            then
+              index="$(echo ${index}| sed 's/\"//g')"
+              echo "[Creating Index] - ${index}"
+              curl -sX POST "https://${acs}/${stack}/adminconfig/v2/indexes"\
+              --header "Authorization: Bearer ${stack_jwt}" \
+              --header 'Content-Type: application/json' \
+              --data-raw "$(cat ${index}.json)"
+
+              sleep 5
+              indexCreationStatus=$(curl -s "https://${acs}/${stack}/adminconfig/v2/indexes/${index}" --header "Authorization: Bearer ${stack_jwt}")
+              LOOPCOUNTER=1
+              while [[ $(echo ${indexCreationStatus}|jq '.code'| sed 's/\"//g') == "404-index-not-found" ]] 
+              do
+                echo "Sleeping... [${LOOPCOUNTER} misissippi]"
+                sleep 15
+                let LOOPCOUNTER=LOOPCOUNTER+1
+                indexCreationStatus=$(curl -s "https://${acs}/${stack}/adminconfig/v2/indexes/${index}" --header "Authorization: Bearer ${stack_jwt}")
+              done
+              echo "[Created Index] - $(echo ${indexCreationStatus} | jq '.name')"
+            fi
+          done
+      - name: Update Existing Indexes
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          indexList=""
+          cd $GITHUB_WORKSPACE/indexes
+          # creates a list of the index names we will be validating
+          for indexFile in $(ls *.json)
+          do
+            indexList="${indexList} $(jq '.name' ${indexFile}|sed 's/\"//g')"
+          done
+          # Performs configuration comparison
+          for index in ${indexList}
+          do
+            echo "[${index}] - Evaluating..."
+
+            localIndex=$(jq --sort-keys '.' ${index}.json)
+            remoteIndex=$(jq --sort-keys ".[]| select(.name==\"${index}\")" /tmp/currentIndexConfiguration.json)
+            if [[ "$(jq -n --argjson a "${localIndex}" --argjson b "${remoteIndex}" '$a == $b')" == "true" ]]
+            then
+              echo "[${index}] - No Update Required"
+            else
+              echo "[${index} - Local and Remote do not match, updating remote to reflect git"
+              # currently supports updates to searchableDays, maxDataSizeMB,splunkArchivalRetentionDays,selfStorageBucketPath
+              jsonUpdate="{"
+              for indexVar in $(echo ${localIndex} | jq 'del(.|.name)'| jq 'del(.|.datatype)' | jq -r 'keys|@tsv')
+              do
+                localIndexVar=$(echo ${localIndex} | jq ".${indexVar}")
+                remoteIndexVar=$(echo ${remoteIndex} | jq ".${indexVar}")
+                if [[ ${localIndexVar} != ${remoteIndexVar} ]]
+                then
+                  echo "[${index}] - ${indexVar}, ${remoteIndexVar} -> ${localIndexVar}"
+                  jsonUpdate="${jsonUpdate} \"${indexVar}\":$(echo ${localIndex} | jq ".${indexVar}"),"
+                fi
+              done
+              jsonUpdate=$(echo ${jsonUpdate} | sed 's/,$/\}/')
+              curl -s -X PATCH "https://${acs}/${stack}/adminconfig/v2/indexes/${index}" --header "Authorization: Bearer ${stack_jwt}" --header 'Content-Type: application/json' --data-raw "$(echo ${jsonUpdate}| jq)"
+            fi
+          done
+      - name: Delete Indexes not in git
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_AUTH_TOKEN}}
+        run: |
+          echo "<TO DO>"
+  ip_allow_list_management:
+    strategy:
+      matrix:
+        whitelist: [search-api,hec,s2s,search-ui]
+    needs: validate_json
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Gather current Whitelist
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+          whitelist: ${{ matrix.whitelist}}
+        run: |
+          curl -s https://${acs}/${stack}/adminconfig/v2/access/${whitelist}/ipallowlists \
+          --header "Authorization: Bearer ${stack_jwt}" > /tmp/ipwhitelist-${whitelist}.json
+      - name: 'Upload Current IP whitelist'
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: ipwhitelist-${{ matrix.whitelist}}.json
+          path: /tmp/ipwhitelist-${{ matrix.whitelist}}.json
+          retention-days: 5
+      - name: Check for additions to ip allow list and add
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+          whitelist: ${{ matrix.whitelist}}
+        run: |
+          echo "Compare current rules against git"
+          cd $GITHUB_WORKSPACE/ipAllow
+          newPayload="false"
+          # If target has default settings just push what we have in git.
+          if [[ $(jq '.subnets[]' /tmp/ipwhitelist-${whitelist}.json ) == "" ]]
+          then
+            payload=$(jq --sort-keys '.' ${whitelist}.json)
+            echo "${payload}"
+            newPayload="true"
+          else
+            payload='{"subnets":['
+            gitIPallowCurrent=$(jq --sort-keys '.' ${whitelist}.json)
+            stackIPallowCurrent=$(jq --sort-keys '.' /tmp/ipwhitelist-${whitelist}.json)
+            for addition in $( diff <(echo ${stackIPallowCurrent}|jq --sort-keys '.subnets[]') <(echo ${gitIPallowCurrent}|jq --sort-keys '.subnets[]') | egrep "^>" | awk '{print $2}' )
+            do
+              payload="${payload} ${addition},"
+              newPayload="true"
+            done
+            payload=$(echo ${payload}|sed -E 's/,?$/]}/g' | jq '.')
+            echo ${payload}
+            
+          fi
+          if [ ! -z "${payload}" ] && [ "${newPayload}" == "true" ]
+          then
+            echo "Apply Deltas:"
+            echo ${payload}
+            echo "---"
+            payloadSubmission=$(curl -s -X POST "https://${acs}/${stack}/adminconfig/v2/access/${whitelist}/ipallowlists" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}" --data "${payload}")
+            echo "${payloadSubmission}"
+          fi
+      - name: Check for deletions to ip allow list and remove
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+          whitelist: ${{ matrix.whitelist}}
+        run: |
+          echo "Compare current rules against git"
+          cd $GITHUB_WORKSPACE/ipAllow
+          newPayload="false"
+
+          payload='{"subnets":['
+          gitIPallowCurrent=$(jq --sort-keys '.' ${whitelist}.json)
+          stackIPallowCurrent=$(jq --sort-keys '.' /tmp/ipwhitelist-${whitelist}.json)
+          for addition in $( diff <(echo ${stackIPallowCurrent}|jq --sort-keys '.subnets[]') <(echo ${gitIPallowCurrent}|jq --sort-keys '.subnets[]') | egrep "^<" | awk '{print $2}' )
+          do
+            payload="${payload} ${addition},"
+            newPayload="true"
+          done
+          payload=$(echo ${payload}|sed -E 's/,?$/]}/g' | jq '.')
+          echo ${payload}
+
+          if [ ! -z "${payload}" ] && [ "${newPayload}" == "true" ]
+          then
+            echo "Apply Deltas:"
+            echo ${payload}
+            echo "---"
+            payloadSubmission=$(curl -s -X DELETE "https://${acs}/${stack}/adminconfig/v2/access/${whitelist}/ipallowlists" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}" --data "${payload}")
+            echo "${payloadSubmission}"
+          fi
+  hec_token_management:
+    needs: validate_json
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Gather current HEC Tokens
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          curl -s https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors \
+          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_HEC_tokens.json
+          # maybe we should obfuscate the tokens before upload as an artifact as they are in the JSON.
+      - name: 'Upload Current HEC Tokens'
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: current_HEC_tokens.json
+          path: /tmp/current_HEC_tokens.json
+          retention-days: 5
+      - name: Create New HEC Tokens
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          # get list of indexes in git, compare with list current installed indexes and deploy anything that does not currently exist in CLoud Stack
+          hecList=""
+          cd $GITHUB_WORKSPACE/hecTokens
+          for token_definition in $(ls *.json)
+          do
+            hecList="${hecList} $(jq -r '.name' ${token_definition})"
+          done
+
+          if [[ $(jq -r '.["http-event-collectors"]' /tmp/current_HEC_tokens.json ) != "null" ]]
+          then
+            cloudList=$(jq -r '.["http-event-collectors"][].spec.name' /tmp/current_HEC_tokens.json)
+          else
+            cloudList=""
+          fi
+
+          for token in ${hecList}
+          do
+            if [[ "${cloudList}" != *"${token}"* ]]
+            then
+              token="$(echo ${token}| sed 's/\"//g')"
+              echo "[Creating Token] - ${token}"
+              submission=$(curl -sX POST "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors"\
+              --header "Authorization: Bearer ${stack_jwt}" \
+              --header 'Content-Type: application/json' \
+              --data-raw "$(cat ${token}.json)")
+              echo "Response: ${submission}"
+
+              sleep 5
+              tokenCreationStatus=$(curl -s "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors/${token}" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}")
+              LOOPCOUNTER=1
+              while [[ $(echo ${tokenCreationStatus}|jq '.code'| sed 's/\"//g') == "404-hec-not-found" ]] 
+              do
+                echo "Sleeping... [${LOOPCOUNTER} misissippi]"
+                sleep 15
+                let LOOPCOUNTER=LOOPCOUNTER+1
+                tokenCreationStatus=$(curl -s "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors/${token}" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}")
+              done
+              echo "[Created Token] - ${token}: $(echo ${tokenCreationStatus} )"
+              # | jq -r '.["http-event-collectors"][].spec.token'
+            fi
+          done
+      # bug with this where it tries to apply everytime...
+      - name: Update Existing HEC Tokens
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          hecList=""
+          cd $GITHUB_WORKSPACE/hecTokens
+          # creates a list of the index names we will be validating
+          for token_definition in $(ls *.json)
+          do
+            hecList="${heclist} $(jq '.name' ${token_definition}|sed 's/\"//g')"
+          done
+          # Performs configuration comparison
+          for hec in ${hecList}
+          do
+            echo "[${hec}] - Evaluating..."
+
+            localHec=$(jq --sort-keys '.' ${hec}.json)
+            remoteHec=$(jq --sort-keys ".[\"http-event-collectors\"][].spec| select(.name==\"${hec}\")|del(.defaultHost)" /tmp/current_HEC_tokens.json)
+            if [[ "$(jq -n --argjson a "${localHec}" --argjson b "${remoteHec}" '$a == $b')" == "true" ]]
+            then
+              echo "[${hec}] - No Update Required"
+            else
+              echo "[${hec} - Local and Remote do not match, updating remote to reflect git"
+              jsonUpdate="{"
+              for hecVar in $(echo ${localHec} | jq 'del(.|.name)'| jq 'del(.|.datatype)' | jq -r 'keys|@tsv')
+              do
+                localHecVar=$(echo ${localHec} | jq ".${hecVar}")
+                remoteHecVar=$(echo ${remoteHec} | jq ".${hecVar}")
+                if [[ ${localHecVar} != ${remoteHecVar} ]]
+                then
+                  echo "[${hec}] - ${hecVar}, ${remoteHecVar} -> ${localHecVar}"
+                  jsonUpdate="${jsonUpdate} \"${hecVar}\":$(echo ${localHec} | jq ".${hecVar}"),"
+                fi
+              done
+              jsonUpdate=$(echo ${jsonUpdate} | sed 's/,$/\}/')
+              curl -s -X PUT "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors/${hec}" --header "Authorization: Bearer ${stack_jwt}" --header 'Content-Type: application/json' --data-raw "$(echo ${jsonUpdate}| jq)"
+            fi
+          done
+      - name: Delete Tokens not referenced in git
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_AUTH_TOKEN}}
+        run: |
+          echo "<TO DO>"
+  #outbound_port_management:
+  #    needs: validate_json
+  #    runs-on: ubuntu-latest
+  #    steps:
+        # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+  #      - name: Check out repo code
+  #        uses: actions/checkout@v3
+  #limits_conf_management:
+  #    needs: validate_json
+  #    runs-on: ubuntu-latest
+  #    steps:
+        # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+  #      - name: Check out repo code
+  #        uses: actions/checkout@v3

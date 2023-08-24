@@ -1,0 +1,3 @@
+# Private Apps
+
+Edit your private apps here, they should be folders and not tarballs so you can edit them easily, don't worry we'll take care of packaging them...

@@ -1,0 +1,10 @@
+{
+   "allowedIndexes": [
+       "main"
+   ],
+   "defaultIndex": "main",
+   "defaultSource": "",
+   "defaultSourcetype": "",
+   "disabled": false,
+   "name": "pipeline-token"
+}
