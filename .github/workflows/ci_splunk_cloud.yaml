@@ -340,7 +340,7 @@ jobs:
           mkdir -p /tmp/privateApps
           # Identify when this is a new stack with no private apps on and deploy them
           # if app in private apps folder not present on target stack copy it to /tmp/privateApps for deployment
-          for app in $(ls privateApps)
+          for app in $(ls privateApps | grep -v "README.md")
           do
             if [[ ! "$(jq -r '.apps[].name' /tmp/current_private_apps.json)" =~ "${app}"  ]]
             then
@@ -385,7 +385,7 @@ jobs:
       - name: Check for local directories
         if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
         run: |
-          if [[ $(find /tmp/appPackages -type d -name local | wc -l) -gt 0 ]]
+          if [[ $(find /tmp/privateApps -type d -name local | wc -l) -gt 0 ]]
           then
             echo "Local Directories Present"
             exit 1
