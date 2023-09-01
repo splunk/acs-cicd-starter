@@ -59,6 +59,8 @@ jobs:
         run: |
           find /tmp/privatePackages -type f | egrep "\.tgz$"
   AppInspect:
+    id: splunk_appinspect_matrix
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
         uses: actions/checkout@v3
