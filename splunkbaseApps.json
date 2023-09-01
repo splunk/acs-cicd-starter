@@ -10,12 +10,6 @@
             "appName": "Splunk_TA_windows",
             "version": "8.7.0",
             "splunkbaseID": "742",
-            "license": "http://www.splunk.com/view/SP-CAAAAFA"
-        },
-        {
-            "appName": "Splunk_TA_github",
-            "version": "2.1.1",
-            "splunkbaseID": "6254",
             "license": "https://www.splunk.com/en_us/legal/splunk-general-terms.html"
         }
     ]
