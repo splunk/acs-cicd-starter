@@ -58,11 +58,11 @@ jobs:
         if: ${{ (steps.changed-files.outputs.any_changed == 'true') }}
         run: |
           find /tmp/privatePackages -type f | egrep "\.tgz$"
-  AppInspect:
-    id: splunk_appinspect_matrix
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repo code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+  #AppInspect:
+   # id: splunk_appinspect_matrix
+  #  runs-on: ubuntu-latest
+  #    - name: Check out repo code
+  #  steps:
+  #      uses: actions/checkout@v3
+  #      with:
+  #        fetch-depth: 0
