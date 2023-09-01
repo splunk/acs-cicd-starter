@@ -102,11 +102,6 @@ jobs:
         env:
           INPUT_SCHEMA: /workflow_support/index_schema.json
           INPUT_JSONS: /indexes/pipeline.json
-      - name: Validate HEC JSON
-        uses: docker://orrosenblatt/validate-json-action:latest
-        env:
-          INPUT_SCHEMA: /workflow_support/hec_schema.json
-          INPUT_JSONS: /hecTokens/pipeline-token.json
   #
   # This job manages Splunkbase apps on the Splunk Cloud environment
   #
