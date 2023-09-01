@@ -10,19 +10,83 @@ on:
   workflow_dispatch:
 
 jobs:
-  # First Job that will end up here is check credentials and stack before starting, validate json that everything hangs off at the moment will move to the ipAllow list job
+  # 
+  # This job checks that the GitHub Secrets have been set correctly and are valid regarding ACS for subsequent jobs to leverage
   #
-  # Pipeline job order
+  validate_stack_and_acs_credentials_configured_and_functioning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check STACK_NAME is set as a GitHub Secret
+        env:
+          stack_name: ${{ secrets.STACK_NAME}}
+        run: |
+          if [[ "${stack_name}" == "" ]]
+          then
+            echo "[Error] - The Secret for STACK_NAME is not set in GitHub Secrets"
+            exit 1
+          fi
+      - name: Check STACK_AUTH_TOKEN is set as a GitHub Secret
+        env:
+          stack_auth_token: ${{ secrets.STACK_AUTH_TOKEN}}
+        run: |
+          if [[ "${stack_auth_token}" == "" ]]
+          then
+            echo "[Error] - The Secret for STACK_AUTH_TOKEN is not set in GitHub Secrets"
+            exit 1
+          fi
+      #- name: Validate ACS Credentials
+      #  env:
+      #    stack_name: ${{ secrets.STACK_NAME}}
+      #    stack_auth_token: ${{ secrets.STACK_AUTH_TOKEN}}
+      #  run: |
+      #    RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+      #    if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
+      #    then
+      #      echo "Failure to authenticate against Splunk API with credentials provided for user: ${splunkbase_username}"
+      #      exit 1
+      #    else
+      #      echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
+      #    fi
   #
-  # acs_stack_health_and_authentication -> validate_json -> indexManagement
-  # acs_stack_health_and_authentication -> validate_json -> ipAllowManagement
-  # acs_stack_health_and_authentication -> validate_json -> HECtokenManagement
-  # acs_stack_health_and_authentication -> splunkbase_app_management
-  # acs_stack_health_and_authentication -> private_app_management
+  # This job checks that the GitHub Secrets have been set correctly to allow for Splunkbase authentication for subsequent jobs to leverage
   #
-  #acs_stack_health_and_authentication:
-  #  runs-on: ubuntu-latest
-  #  steps:
+  validate_splunkbase_credentials_configured_and_functioning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check SPLUNKBASE_USERNAME is set as a GitHub Secret
+        env:
+          splunkbase_username: ${{ secrets.SPLUNKBASE_USERNAME}}
+        run: |
+          if [[ "${splunkbase_username}" == "" ]]
+          then
+            echo "[Error] - The Secret for SPLUNKBASE_USERNAME is not set in GitHub Secrets"
+            exit 1
+          fi
+      - name: Check SPLUNKBASE_PASSWORD is set as a GitHub Secret
+        env:
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          if [[ "${splunkbase_password}" == "" ]]
+          then
+            echo "[Error] - The Secret for SPLUNKBASE_PASSWORD is not set in GitHub Secrets"
+            exit 1
+          fi
+      - name: Validate Credentials
+        env:
+           splunkbase_username: ${{ secrets.SPLUNKBASE_USERNAME}}
+           splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+          if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
+          then
+            echo "Failure to authenticate against Splunk API with credentials provided for user: ${splunkbase_username}"
+            exit 1
+          else
+            echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
+          fi
+  #
+  # This job validates some of the json files against the schemas
+  #
   validate_json:
     runs-on: ubuntu-latest
     steps:
@@ -43,8 +107,11 @@ jobs:
         env:
           INPUT_SCHEMA: /workflow_support/hec_schema.json
           INPUT_JSONS: /hecTokens/pipeline-token.json
+  #
+  # This job manages Splunkbase apps on the Splunk Cloud environment
+  #
   splunkbase_app_management:
-    needs: validate_json
+    needs: [validate_json,validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       - name: Authenticate with splunk API service
@@ -183,8 +250,11 @@ jobs:
               echo "Leaving installed app untouched: ${installedApp}"
             fi
           done
+  #
+  # This job manages private apps including app inspect
+  #
   private_app_management:
-    needs: validate_json
+    needs: [validate_json,validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -370,8 +440,11 @@ jobs:
             --data-binary "@${candidateApp}")
             echo ${appInstallation}
           done
+  #
+  # This job manages index configurations on the Splunk Cloud environment
+  #
   indexManagement:
-    needs: validate_json
+    needs: [validate_json,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -478,11 +551,14 @@ jobs:
           stack_jwt: ${{ secrets.STACK_AUTH_TOKEN}}
         run: |
           echo "<TO DO>"
+  #
+  # This job manages ip allow lists on the Splunk Cloud Environment
+  #
   ip_allow_list_management:
     strategy:
       matrix:
         whitelist: [search-api,hec,s2s,search-ui]
-    needs: validate_json
+    needs: [validate_json,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
@@ -570,125 +646,8 @@ jobs:
             payloadSubmission=$(curl -s -X DELETE "https://${acs}/${stack}/adminconfig/v2/access/${whitelist}/ipallowlists" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}" --data "${payload}")
             echo "${payloadSubmission}"
           fi
-  hec_token_management:
-    needs: validate_json
-    runs-on: ubuntu-latest
-    steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - name: Check out repo code
-        uses: actions/checkout@v3
-      - name: Gather current HEC Tokens
-        env:
-          stack: ${{ secrets.STACK_NAME}}
-          stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
-        run: |
-          curl -s https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors \
-          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_HEC_tokens.json
-          # maybe we should obfuscate the tokens before upload as an artifact as they are in the JSON.
-      - name: 'Upload Current HEC Tokens'
-        uses: actions/upload-artifact@v3
-        if: success()
-        with:
-          name: current_HEC_tokens.json
-          path: /tmp/current_HEC_tokens.json
-          retention-days: 5
-      - name: Create New HEC Tokens
-        env:
-          stack: ${{ secrets.STACK_NAME}}
-          stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
-        run: |
-          # get list of indexes in git, compare with list current installed indexes and deploy anything that does not currently exist in CLoud Stack
-          hecList=""
-          cd $GITHUB_WORKSPACE/hecTokens
-          for token_definition in $(ls *.json)
-          do
-            hecList="${hecList} $(jq -r '.name' ${token_definition})"
-          done
-
-          if [[ $(jq -r '.["http-event-collectors"]' /tmp/current_HEC_tokens.json ) != "null" ]]
-          then
-            cloudList=$(jq -r '.["http-event-collectors"][].spec.name' /tmp/current_HEC_tokens.json)
-          else
-            cloudList=""
-          fi
-
-          for token in ${hecList}
-          do
-            if [[ "${cloudList}" != *"${token}"* ]]
-            then
-              token="$(echo ${token}| sed 's/\"//g')"
-              echo "[Creating Token] - ${token}"
-              submission=$(curl -sX POST "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors"\
-              --header "Authorization: Bearer ${stack_jwt}" \
-              --header 'Content-Type: application/json' \
-              --data-raw "$(cat ${token}.json)")
-              echo "Response: ${submission}"
-
-              sleep 5
-              tokenCreationStatus=$(curl -s "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors/${token}" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}")
-              LOOPCOUNTER=1
-              while [[ $(echo ${tokenCreationStatus}|jq '.code'| sed 's/\"//g') == "404-hec-not-found" ]] 
-              do
-                echo "Sleeping... [${LOOPCOUNTER} misissippi]"
-                sleep 15
-                let LOOPCOUNTER=LOOPCOUNTER+1
-                tokenCreationStatus=$(curl -s "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors/${token}" --header 'Content-Type: application/json' --header "Authorization: Bearer ${stack_jwt}")
-              done
-              echo "[Created Token] - ${token}: $(echo ${tokenCreationStatus} )"
-              # | jq -r '.["http-event-collectors"][].spec.token'
-            fi
-          done
-      # bug with this where it tries to apply everytime...
-      - name: Update Existing HEC Tokens
-        env:
-          stack: ${{ secrets.STACK_NAME}}
-          stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
-        run: |
-          hecList=""
-          cd $GITHUB_WORKSPACE/hecTokens
-          # creates a list of the index names we will be validating
-          for token_definition in $(ls *.json)
-          do
-            hecList="${heclist} $(jq '.name' ${token_definition}|sed 's/\"//g')"
-          done
-          # Performs configuration comparison
-          for hec in ${hecList}
-          do
-            echo "[${hec}] - Evaluating..."
-
-            localHec=$(jq --sort-keys '.' ${hec}.json)
-            remoteHec=$(jq --sort-keys ".[\"http-event-collectors\"][].spec| select(.name==\"${hec}\")|del(.defaultHost)" /tmp/current_HEC_tokens.json)
-            if [[ "$(jq -n --argjson a "${localHec}" --argjson b "${remoteHec}" '$a == $b')" == "true" ]]
-            then
-              echo "[${hec}] - No Update Required"
-            else
-              echo "[${hec} - Local and Remote do not match, updating remote to reflect git"
-              jsonUpdate="{"
-              for hecVar in $(echo ${localHec} | jq 'del(.|.name)'| jq 'del(.|.datatype)' | jq -r 'keys|@tsv')
-              do
-                localHecVar=$(echo ${localHec} | jq ".${hecVar}")
-                remoteHecVar=$(echo ${remoteHec} | jq ".${hecVar}")
-                if [[ ${localHecVar} != ${remoteHecVar} ]]
-                then
-                  echo "[${hec}] - ${hecVar}, ${remoteHecVar} -> ${localHecVar}"
-                  jsonUpdate="${jsonUpdate} \"${hecVar}\":$(echo ${localHec} | jq ".${hecVar}"),"
-                fi
-              done
-              jsonUpdate=$(echo ${jsonUpdate} | sed 's/,$/\}/')
-              curl -s -X PUT "https://${acs}/${stack}/adminconfig/v2/inputs/http-event-collectors/${hec}" --header "Authorization: Bearer ${stack_jwt}" --header 'Content-Type: application/json' --data-raw "$(echo ${jsonUpdate}| jq)"
-            fi
-          done
-      - name: Delete Tokens not referenced in git
-        env:
-          stack: ${{ secrets.STACK_NAME}}
-          stack_jwt: ${{ secrets.STACK_AUTH_TOKEN}}
-        run: |
-          echo "<TO DO>"
   #outbound_port_management:
-  #    needs: validate_json
+  #    needs: [validate_json,validate_stack_and_acs_credentials_configured_and_functioning]
   #    runs-on: ubuntu-latest
   #    steps:
         # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it

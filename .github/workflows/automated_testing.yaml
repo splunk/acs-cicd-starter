@@ -4,14 +4,13 @@ name: Automated Testing
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [ * ]
+    branches: [ '**' ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
-  Splunk appinspect Check:
-    id: splunk_appinspect_check
+  splunk_appinspect_check:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
@@ -58,4 +57,11 @@ jobs:
         if: ${{ (steps.changed-files.outputs.any_changed == 'true') }}
         run: |
           find /tmp/privatePackages -type f | egrep "\.tgz$"
-  AppInspect:
+  splunk_appinspect_matrix:
+   # id: splunk_appinspect_matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
