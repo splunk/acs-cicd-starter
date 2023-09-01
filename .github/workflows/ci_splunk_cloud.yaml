@@ -407,6 +407,7 @@ jobs:
           stack_jwt: ${{ secrets.STACK_TOKEN}}
           appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
         run: |
+          appinspect_token=$(echo "${appinspect_token}" | base64 -d)
           mkdir -p /tmp/appinspect_failures
           cd /tmp/privatePackages
           for candidateApp in $(ls)
@@ -471,6 +472,7 @@ jobs:
         run: |
           #export acs="staging.admin.splunk.com"
           #export appinspect_token=$(cat /tmp/appInspect_token)
+          appinspect_token=$(echo "${appinspect_token}" | base64 -d)
           cd /tmp/privatePackages
           for candidateApp in $(ls)
           do
