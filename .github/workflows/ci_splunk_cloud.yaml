@@ -249,7 +249,7 @@ jobs:
   # This job manages private apps including app inspect
   #
   private_app_management:
-    needs: [validate_json,validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
