@@ -13,7 +13,7 @@ jobs:
   # 
   # This job checks that the GitHub Secrets have been set correctly and are valid regarding ACS for subsequent jobs to leverage
   #
-  validate_stack_and_acs_credentials_configured_and_functioning:
+  validate_stack_and_acs_credentials_configured:
     runs-on: ubuntu-latest
     steps:
       - name: Check STACK_NAME is set as a GitHub Secret
@@ -50,7 +50,7 @@ jobs:
   #
   # This job checks that the GitHub Secrets have been set correctly to allow for Splunkbase authentication for subsequent jobs to leverage
   #
-  validate_splunkbase_credentials_configured_and_functioning:
+  validate_splunkbase_credentials_configured:
     runs-on: ubuntu-latest
     steps:
       - name: Check SPLUNKBASE_USERNAME is set as a GitHub Secret
@@ -71,19 +71,19 @@ jobs:
             echo "[Error] - The Secret for SPLUNKBASE_PASSWORD is not set in GitHub Secrets"
             exit 1
           fi
-      - name: Validate Credentials
-        env:
-           splunkbase_username: ${{ secrets.SPLUNKBASE_USERNAME}}
-           splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
-        run: |
-          RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
-          if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
-          then
-            echo "Failure to authenticate against Splunk API with credentials provided for user: ${splunkbase_username}"
-            exit 1
-          else
-            echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
-          fi
+      #- name: Validate Credentials
+      #  env:
+      #     splunkbase_username: ${{ secrets.SPLUNKBASE_USERNAME}}
+      #     splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+      #  run: |
+      #    RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+      #    if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
+      #    then
+      #      echo "Failure to authenticate against Splunk API with credentials provided for user: ${splunkbase_username}"
+      #      exit 1
+      #    else
+      #      echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
+      #    fi
   #
   #
   #
@@ -91,7 +91,7 @@ jobs:
     outputs:
       splunkapi_auth_token: ${{ steps.auth-splunk-api.outputs.api_auth_token }}
       splunkbase_auth_token: ${{ steps.authenticate-splunkbase.outputs.auth_token }}
-    needs: validate_splunkbase_credentials_configured_and_functioning
+    needs: [validate_splunkbase_credentials_configured,validate_stack_and_acs_credentials_configured]
     runs-on: ubuntu-latest
     steps:
       - name: authenticate with splunkbase
@@ -151,7 +151,7 @@ jobs:
   # This job manages Splunkbase apps on the Splunk Cloud environment
   #
   splunkbase_app_management:
-    needs: [validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [authenticate_with_splunk]
     runs-on: ubuntu-latest
     steps:
       - name: Authenticate with splunk API service
@@ -294,7 +294,7 @@ jobs:
   # This job manages private apps including app inspect
   #
   private_app_management:
-    needs: [authenticate_with_splunk,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [authenticate_with_splunk]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -405,7 +405,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
+          appinspect_token: ${{ steps.auth-splunk-api.outputs.api_auth_token }}
         run: |
           mkdir -p /tmp/appinspect_failures
           cd /tmp/privatePackages
@@ -466,7 +466,7 @@ jobs:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
           acs: staging.admin.splunk.com
-          appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
+          appinspect_token: ${{ steps.auth-splunk-api.outputs.api_auth_token }}
         run: |
           #export acs="staging.admin.splunk.com"
           #export appinspect_token=$(cat /tmp/appInspect_token)
@@ -484,7 +484,7 @@ jobs:
   # This job manages index configurations on the Splunk Cloud environment
   #
   indexManagement:
-    needs: [validate_json,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [validate_json,authenticate_with_splunk]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -598,7 +598,7 @@ jobs:
     strategy:
       matrix:
         whitelist: [search-api,hec,s2s,search-ui]
-    needs: [validate_json,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [validate_json,authenticate_with_splunk]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
@@ -687,7 +687,7 @@ jobs:
             echo "${payloadSubmission}"
           fi
   #outbound_port_management:
-  #    needs: [validate_json,validate_stack_and_acs_credentials_configured_and_functioning]
+  #    needs: [validate_json,authenticate_with_splunk]
   #    runs-on: ubuntu-latest
   #    steps:
         # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
