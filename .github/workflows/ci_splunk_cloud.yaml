@@ -85,6 +85,51 @@ jobs:
             echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
           fi
   #
+  #
+  #
+  authenticate_with_splunk:
+    outputs:
+      splunkapi_auth_token: ${{ steps.auth-splunk-api.outputs.api_auth_token }}
+      splunkbase_auth_token: ${{ steps.authenticate-splunkbase.outputs.auth_token }}
+    needs: validate_splunkbase_credentials_configured_and_functioning
+    runs-on: ubuntu-latest
+    steps:
+      - name: authenticate with splunkbase
+        id: authenticate-splunkbase
+        env:
+          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          splunkbase_token=$(curl -sX POST --form "username=\"${splunkbase_user}\"" --form "password=\"${splunkbase_password}\"" 'https://splunkbase.splunk.com/api/account:login'| sed -ne 's/.*<id>\(.*\)<\/id>/\1/p')
+          if [[ ${splunkbase_token} == "" ]]
+          then
+            echo "token: ${splunkbase_token}"
+            exit 1
+          else
+            #echo ${splunkbase_token} > /tmp/splunkbase_token
+            echo "auth_token=$(echo ${splunkbase_token})" >> $GITHUB_OUTPUT
+          fi
+      - name: Authenticate with splunk API service
+        id: auth-splunk-api
+        env:
+          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          splunk_api_session=$(curl -s -k -u ${splunkbase_user}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+          if [[ $(echo ${splunk_api_session} | jq ".status_code") -eq 200 ]]
+          then 
+            echo "[success] - Obtained Auth Token from Splunk API service"
+            #echo ${splunk_api_session} | jq ".data.token" | sed 's/\"//g' > /tmp/appInspect_token
+            echo "${splunk_api_session}"
+          else
+            echo "[failed] - Something happened that resulted in a non-200 response"
+            echo "${splunk_api_session}"
+            exit 1
+          fi
+          api_auth_token=$(echo ${splunk_api_session} | jq -r '.data.token'|base64 -w 0)
+          echo "${api_auth_token}"
+          echo "api_auth_token=${api_auth_token}" >> $GITHUB_OUTPUT
+  #
   # This job validates some of the json files against the schemas
   #
   validate_json:
@@ -249,7 +294,7 @@ jobs:
   # This job manages private apps including app inspect
   #
   private_app_management:
-    needs: [validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [authenticate_with_splunk,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -360,7 +405,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          appinspect_token: ${{ steps.authenticate-splunk-api-service.outputs.appInspect_token}}
+          appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
         run: |
           mkdir -p /tmp/appinspect_failures
           cd /tmp/privatePackages
@@ -421,7 +466,7 @@ jobs:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
           acs: staging.admin.splunk.com
-          appinspect_token: ${{ steps.authenticate-splunk-api-service.outputs.appInspect_token }}
+          appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
         run: |
           #export acs="staging.admin.splunk.com"
           #export appinspect_token=$(cat /tmp/appInspect_token)
