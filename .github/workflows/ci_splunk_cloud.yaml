@@ -325,7 +325,7 @@ jobs:
       - name: generate commit hash
         id: commit
         if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
-        uses: pr-mpt/actions-commit-hash@v2
+        uses: prompt/actions-commit-hash@v2
       - name: Append Commit to App
         if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
         env:
