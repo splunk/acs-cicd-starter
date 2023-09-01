@@ -410,6 +410,7 @@ jobs:
           appinspect_token=$(echo "${appinspect_token}" | base64 -d)
           mkdir -p /tmp/appinspect_failures
           cd /tmp/privatePackages
+          ls
           for candidateApp in $(ls)
           do
             echo "[AppInspect] - ${candidateApp}"
