@@ -25,19 +25,19 @@ jobs:
             echo "[Error] - The Secret for STACK_NAME is not set in GitHub Secrets"
             exit 1
           fi
-      - name: Check STACK_AUTH_TOKEN is set as a GitHub Secret
+      - name: Check STACK_TOKEN is set as a GitHub Secret
         env:
-          stack_auth_token: ${{ secrets.STACK_AUTH_TOKEN}}
+          stack_auth_token: ${{ secrets.STACK_TOKEN}}
         run: |
           if [[ "${stack_auth_token}" == "" ]]
           then
-            echo "[Error] - The Secret for STACK_AUTH_TOKEN is not set in GitHub Secrets"
+            echo "[Error] - The Secret for STACK_TOKEN is not set in GitHub Secrets"
             exit 1
           fi
       #- name: Validate ACS Credentials
       #  env:
       #    stack_name: ${{ secrets.STACK_NAME}}
-      #    stack_auth_token: ${{ secrets.STACK_AUTH_TOKEN}}
+      #    stack_auth_token: ${{ secrets.STACK_TOKEN}}
       #  run: |
       #    RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
       #    if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
@@ -106,7 +106,7 @@ jobs:
   # This job manages Splunkbase apps on the Splunk Cloud environment
   #
   splunkbase_app_management:
-    needs: [validate_json,validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
+    needs: [validate_splunkbase_credentials_configured_and_functioning,validate_stack_and_acs_credentials_configured_and_functioning]
     runs-on: ubuntu-latest
     steps:
       - name: Authenticate with splunk API service
