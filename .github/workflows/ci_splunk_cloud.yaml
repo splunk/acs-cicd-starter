@@ -416,7 +416,7 @@ jobs:
             AppRequest=$(curl -sX POST 'https://appinspect.splunk.com/v1/app/validate' \
             --header "Authorization: Bearer ${appinspect_token}" \
             --header "Cache-Control: no-cache" \
-            --form "app_package=@\"${candidateApp}\""
+            --form "app_package=@\"${candidateApp}\"")
             echo "${AppRequest}"
             # Extract request
             requestURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"status\")|.href"| sed 's/\"//g')
