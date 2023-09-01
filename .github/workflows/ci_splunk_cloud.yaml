@@ -417,6 +417,7 @@ jobs:
             --header "Cache-Control: no-cache" \
             --form "app_package=@\"${candidateApp}\"" \
             --form 'included_tags="private_app"')
+            echo "${AppRequest}"
             # Extract request
             requestURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"status\")|.href"| sed 's/\"//g')
             reportURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"report\")|.href"| sed 's/\"//g')
