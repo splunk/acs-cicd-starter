@@ -301,6 +301,8 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Check out repo code
         uses: actions/checkout@v3
+      - name: Install jq for JSON parsing
+        run: sudo apt install -y jq
       - name: Authenticate with splunk API service
         id: authenticate-splunk-api-service
         env:
