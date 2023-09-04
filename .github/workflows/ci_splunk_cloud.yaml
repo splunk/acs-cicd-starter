@@ -395,6 +395,7 @@ jobs:
         run: |
           mkdir /tmp/privatePackages
           cd /tmp/privateApps
+          tar --version
           for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| tail -n +2)
           do
             # <TO DO> this section still runs even if no apps need packaging for validation, will have to fix that
