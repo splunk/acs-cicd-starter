@@ -295,8 +295,7 @@ jobs:
   #
   private_app_management:
     needs: [authenticate_with_splunk]
-    #runs-on: ubuntu-latest
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Check out repo code
