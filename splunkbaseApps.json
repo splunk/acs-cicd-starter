@@ -2,9 +2,9 @@
     "apps":[
         {
             "appName": "Splunk_TA_cisco-asa",
-            "version": "5.1.0",
+            "version": "5.1.1",
             "splunkbaseID": "1620",
-            "license": "http://www.splunk.com/view/SP-CAAAAFA"
+            "license": "https://www.splunk.com/en_us/legal/splunk-general-terms.html"
         },
         {
             "appName": "Splunk_TA_windows",
