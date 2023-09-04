@@ -418,11 +418,7 @@ jobs:
           for candidateApp in $(ls)
           do
             echo "[AppInspect] - ${candidateApp}"
-            AppRequest=$(curl -sX POST 'https://appinspect.splunk.com/v1/app/validate' \
-            --header "Authorization: Bearer ${appinspect_token}" \
-            --header "Cache-Control: no-cache" \
-            --form "app_package=@${candidateApp}" \
-            --form 'included_tags="private_app"')
+            AppRequest=$(curl -sX POST 'https://appinspect.splunk.com/v1/app/validate' --header "Authorization: Bearer ${appinspect_token}" --header "Cache-Control: no-cache" --form "app_package=@\"${candidateApp}\"" --form 'included_tags="private_app"')
             echo "${AppRequest}"
             # Extract request
             requestURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"status\")|.href"| sed 's/\"//g')
