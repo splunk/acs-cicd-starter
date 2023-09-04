@@ -399,7 +399,7 @@ jobs:
           for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| tail -n +2)
           do
             # <TO DO> this section still runs even if no apps need packaging for validation, will have to fix that
-            tar -zcf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
+            COPYFILE_DISABLE=1 tar --format ustar -zcvf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
           done
       - name: Run Apps through App Inspect
         if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
