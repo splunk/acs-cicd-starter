@@ -302,23 +302,23 @@ jobs:
         uses: actions/checkout@v3
       - name: Install jq for JSON parsing
         run: sudo apt install -y jq
-      - name: Authenticate with splunk API service
-        id: authenticate-splunk-api-service
-        env:
-          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
-          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
-        run: |
-          splunk_api_session=$(curl -s -k -u ${splunkbase_user}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
-          if [[ $(echo ${splunk_api_session} | jq ".status_code") -eq 200 ]]
-          then 
-            echo "[success] - Obtained Auth Token from Splunk API service"
-            echo ${splunk_api_session} | jq ".data.token" | sed 's/\"//g' > /tmp/appInspect_token
-            echo "appInspect_token=$(cat /tmp/appInspect_token)" >> $GITHUB_OUTPUT
-          else
-            echo "[failed] - Something happened that resulted in a non-200 response"
-            echo "${splunk_api_session}"
-            exit 1
-          fi
+      #- name: Authenticate with splunk API service
+      #  id: authenticate-splunk-api-service
+      #  env:
+      #    splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+      #    splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+      #  run: |
+      #    splunk_api_session=$(curl -s -k -u ${splunkbase_user}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+      #    if [[ $(echo ${splunk_api_session} | jq ".status_code") -eq 200 ]]
+      #    then 
+      #      echo "[success] - Obtained Auth Token from Splunk API service"
+      #      echo ${splunk_api_session} | jq ".data.token" | sed 's/\"//g' > /tmp/appInspect_token
+      #      echo "appInspect_token=$(cat /tmp/appInspect_token)" >> $GITHUB_OUTPUT
+      #    else
+      #      echo "[failed] - Something happened that resulted in a non-200 response"
+      #      echo "${splunk_api_session}"
+      #      exit 1
+      #    fi
       - name: Gather installed private apps from stack
         env:
           stack: ${{ secrets.STACK_NAME}}
@@ -408,10 +408,10 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          #appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
-          appinspect_token: ${{steps.authenticate-splunk-api-service.outputs.appInspect_token}}
+          appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
+          #appinspect_token: ${{steps.authenticate-splunk-api-service.outputs.appInspect_token}}
         run: |
-          #appinspect_token=$(echo "${appinspect_token}" | base64 -d)
+          appinspect_token=$(echo "${appinspect_token}" | base64 -d)
           mkdir -p /tmp/appinspect_failures
           cd /tmp/privatePackages
           find . -type f
