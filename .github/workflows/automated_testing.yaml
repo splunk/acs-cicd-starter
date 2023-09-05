@@ -1,4 +1,4 @@
-name: Automated Testing
+name: Branch Testing
 
 # Controls when the workflow will run
 on:
