@@ -11,6 +11,12 @@
             "version": "8.7.0",
             "splunkbaseID": "742",
             "license": "https://www.splunk.com/en_us/legal/splunk-general-terms.html"
+        },
+        {
+            "appName": "Splunk_TA_nix",
+            "version": "8.10.0",
+            "splunkbaseID": "833",
+            "license": "https://www.splunk.com/en_us/legal/splunk-general-terms.html"
         }
     ]
 }

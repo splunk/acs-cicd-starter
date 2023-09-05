@@ -191,8 +191,9 @@ jobs:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
           acs: staging.admin.splunk.com
-          splunkbase_token: ${{steps.authenticate-splunkbase.outputs.splunkbase_token}}
+          splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
+          splunkbase_token = $(echo "${splunkbase_token}" | base64 -d)
           # gets splunkbase token from previous task, this is to try and minimise throttling...  Need to change this to something that traverses jobs and not just tasks...
           for app in $(jq '.apps[].splunkbaseID' splunkbaseApps.json | sed 's/\"//g')
           do
@@ -234,9 +235,9 @@ jobs:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
           acs: staging.admin.splunk.com
-          splunkbase_token: ${{steps.authenticate-splunkbase.outputs.splunkbase_token}}
+          splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
-          #export splunkbase_token=$(cat /tmp/splunkbase_token)
+          splunkbase_token = $(echo "${splunkbase_token}" | base64 -d)
 
           for gitappID in $(jq '.apps[].splunkbaseID' splunkbaseApps.json)
           do
@@ -302,23 +303,6 @@ jobs:
         uses: actions/checkout@v3
       - name: Install jq for JSON parsing
         run: sudo apt install -y jq
-      #- name: Authenticate with splunk API service
-      #  id: authenticate-splunk-api-service
-      #  env:
-      #    splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
-      #    splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
-      #  run: |
-      #    splunk_api_session=$(curl -s -k -u ${splunkbase_user}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
-      #    if [[ $(echo ${splunk_api_session} | jq ".status_code") -eq 200 ]]
-      #    then 
-      #      echo "[success] - Obtained Auth Token from Splunk API service"
-      #      echo ${splunk_api_session} | jq ".data.token" | sed 's/\"//g' > /tmp/appInspect_token
-      #      echo "appInspect_token=$(cat /tmp/appInspect_token)" >> $GITHUB_OUTPUT
-      #    else
-      #      echo "[failed] - Something happened that resulted in a non-200 response"
-      #      echo "${splunk_api_session}"
-      #      exit 1
-      #    fi
       - name: Gather installed private apps from stack
         env:
           stack: ${{ secrets.STACK_NAME}}
@@ -409,7 +393,6 @@ jobs:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
           appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
-          #appinspect_token: ${{steps.authenticate-splunk-api-service.outputs.appInspect_token}}
         run: |
           appinspect_token=$(echo "${appinspect_token}" | base64 -d)
           mkdir -p /tmp/appinspect_failures
