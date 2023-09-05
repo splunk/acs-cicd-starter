@@ -126,6 +126,7 @@ jobs:
             echo "${splunk_api_session}"
             exit 1
           fi
+          # This base64 encoding is necessary to pass the JWT between jobs
           api_auth_token=$(echo ${splunk_api_session} | jq -r '.data.token'|base64 -w 0)
           echo "${api_auth_token}"
           echo "api_auth_token=${api_auth_token}" >> $GITHUB_OUTPUT
@@ -154,22 +155,22 @@ jobs:
     needs: [authenticate_with_splunk]
     runs-on: ubuntu-latest
     steps:
-      - name: Authenticate with splunk API service
-        id: authenticate-splunkbase
-        env:
-          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
-          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
-        run: |
-          export splunkbase_token=$(curl -sX POST --form "username=\"${splunkbase_user}\"" --form "password=\"${splunkbase_password}\"" 'https://splunkbase.splunk.com/api/account:login'| sed -ne 's/.*<id>\(.*\)<\/id>/\1/p')
-          if [[ ${splunkbase_token} == "" ]]
-          then
-            echo "token: ${splunkbase_token}"
-            exit 1
-          else
-            #echo "::set-output name=token::${splunkbase_token}"
-            echo ${splunkbase_token} > /tmp/splunkbase_token
-            echo "splunkbase_token=${splunkbase_token}" >> $GITHUB_OUTPUT
-          fi
+      #- name: Authenticate with splunk API service
+      #  id: authenticate-splunkbase
+      #  env:
+      #    splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+      #    splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+      #  run: |
+      #    export splunkbase_token=$(curl -sX POST --form "username=\"${splunkbase_user}\"" --form "password=\"${splunkbase_password}\"" 'https://splunkbase.splunk.com/api/account:login'| sed -ne 's/.*<id>\(.*\)<\/id>/\1/p')
+      #    if [[ ${splunkbase_token} == "" ]]
+      #    then
+      #      echo "token: ${splunkbase_token}"
+      #      exit 1
+      #    else
+      #      #echo "::set-output name=token::${splunkbase_token}"
+      #      echo ${splunkbase_token} > /tmp/splunkbase_token
+      #      echo "splunkbase_token=${splunkbase_token}" >> $GITHUB_OUTPUT
+      #    fi
       - name: Check out repo code
         uses: actions/checkout@v3
         with:
@@ -193,7 +194,6 @@ jobs:
           acs: staging.admin.splunk.com
           splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
-          splunkbase_token=$(echo "${splunkbase_token}" | base64 -d)
           # gets splunkbase token from previous task, this is to try and minimise throttling...  Need to change this to something that traverses jobs and not just tasks...
           for app in $(jq '.apps[].splunkbaseID' splunkbaseApps.json | sed 's/\"//g')
           do
@@ -237,7 +237,6 @@ jobs:
           acs: staging.admin.splunk.com
           splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
-          splunkbase_token=$(echo "${splunkbase_token}" | base64 -d)
 
           for gitappID in $(jq '.apps[].splunkbaseID' splunkbaseApps.json)
           do
