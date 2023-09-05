@@ -1,4 +1,4 @@
-name: CI - Validation and Checking
+name: Automated Deployment to Splunk Cloud
 
 # Controls when the workflow will run
 on:
@@ -428,7 +428,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
           appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
         run: |
           #export acs="staging.admin.splunk.com"
@@ -458,7 +458,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
         run: |
           curl -s "https://${acs}/${stack}/adminconfig/v2/indexes" --header "Authorization: Bearer ${stack_jwt}" -o /tmp/currentIndexConfiguration.json
       - name: 'Upload Current Index Configuration'
@@ -472,7 +472,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
         run: |
           # get list of indexes in git, compare with list current installed indexes and deploy anything that does not currently exist in CLoud Stack
           indexList=""
@@ -512,7 +512,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
         run: |
           indexList=""
           cd $GITHUB_WORKSPACE/indexes
@@ -571,7 +571,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
           whitelist: ${{ matrix.whitelist}}
         run: |
           curl -s https://${acs}/${stack}/adminconfig/v2/access/${whitelist}/ipallowlists \
@@ -587,7 +587,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
           whitelist: ${{ matrix.whitelist}}
         run: |
           echo "Compare current rules against git"
@@ -624,7 +624,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
           whitelist: ${{ matrix.whitelist}}
         run: |
           echo "Compare current rules against git"
