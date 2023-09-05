@@ -295,7 +295,7 @@ jobs:
   #
   private_app_management:
     needs: [authenticate_with_splunk]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Check out repo code
@@ -398,7 +398,7 @@ jobs:
           mkdir /tmp/privatePackages
           cd /tmp/privateApps
           tar --version
-          for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| tail -n +2)
+          for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| sed 's/^\.\///g'| tail -n +2)
           do
             # <TO DO> this section still runs even if no apps need packaging for validation, will have to fix that
             COPYFILE_DISABLE=1 tar --format ustar -zcvf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
