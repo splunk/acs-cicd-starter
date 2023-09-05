@@ -193,7 +193,7 @@ jobs:
           acs: staging.admin.splunk.com
           splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
-          splunkbase_token = $(echo "${splunkbase_token}" | base64 -d)
+          splunkbase_token=$(echo "${splunkbase_token}" | base64 -d)
           # gets splunkbase token from previous task, this is to try and minimise throttling...  Need to change this to something that traverses jobs and not just tasks...
           for app in $(jq '.apps[].splunkbaseID' splunkbaseApps.json | sed 's/\"//g')
           do
@@ -237,7 +237,7 @@ jobs:
           acs: staging.admin.splunk.com
           splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
-          splunkbase_token = $(echo "${splunkbase_token}" | base64 -d)
+          splunkbase_token=$(echo "${splunkbase_token}" | base64 -d)
 
           for gitappID in $(jq '.apps[].splunkbaseID' splunkbaseApps.json)
           do
