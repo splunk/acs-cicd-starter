@@ -9,7 +9,11 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+env:
+  acs_endpoint: staging.admin.splunk.com
+
 jobs:
+  
   # 
   # This job checks that the GitHub Secrets have been set correctly and are valid regarding ACS for subsequent jobs to leverage
   #
@@ -34,19 +38,6 @@ jobs:
             echo "[Error] - The Secret for STACK_TOKEN is not set in GitHub Secrets"
             exit 1
           fi
-      #- name: Validate ACS Credentials
-      #  env:
-      #    stack_name: ${{ secrets.STACK_NAME}}
-      #    stack_auth_token: ${{ secrets.STACK_TOKEN}}
-      #  run: |
-      #    RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
-      #    if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
-      #    then
-      #      echo "Failure to authenticate against Splunk API with credentials provided for user: ${splunkbase_username}"
-      #      exit 1
-      #    else
-      #      echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
-      #    fi
   #
   # This job checks that the GitHub Secrets have been set correctly to allow for Splunkbase authentication for subsequent jobs to leverage
   #
@@ -71,19 +62,6 @@ jobs:
             echo "[Error] - The Secret for SPLUNKBASE_PASSWORD is not set in GitHub Secrets"
             exit 1
           fi
-      #- name: Validate Credentials
-      #  env:
-      #     splunkbase_username: ${{ secrets.SPLUNKBASE_USERNAME}}
-      #     splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
-      #  run: |
-      #    RESPONSE=$(curl -s -k -u ${splunkbase_username}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
-      #    if [ $(echo ${RESPONSE} | jq '.status_code') != "200"]
-      #    then
-      #      echo "Failure to authenticate against Splunk API with credentials provided for user: ${splunkbase_username}"
-      #      exit 1
-      #    else
-      #      echo "status: $(echo ${RESPONSE} | jq '.status_code')"          
-      #    fi
   #
   #
   #
@@ -181,7 +159,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
         run: |
           # output defaults to 30 apps upto a maximum of 100, so we need to handle more than 100 splunkbase apps here...
           curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria?splunkbase=true&count=100" \
@@ -191,7 +169,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
           splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
           # gets splunkbase token from previous task, this is to try and minimise throttling...  Need to change this to something that traverses jobs and not just tasks...
@@ -224,7 +202,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
         run: |
           # output defaults to 30 apps upto a maximum of 100, so we need to handle more than 100 splunkbase apps here...
           curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria?splunkbase=true&count=100" \
@@ -234,7 +212,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
           splunkbase_token: ${{ needs.authenticate_with_splunk.outputs.splunkbase_auth_token }}
         run: |
 
@@ -271,7 +249,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
+          acs: ${{ env.acs_endpoint }}
         run: |
           splunkbaseAppsList=$(jq '.apps[].splunkbaseID' splunkbaseApps.json)
           defaultAppsList=$(jq '.apps[].splunkbaseID' workflow_support/splunkbase_exclusion.json)

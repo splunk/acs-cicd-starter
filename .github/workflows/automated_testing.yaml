@@ -4,19 +4,147 @@ name: Automated Testing
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [ '**' ]
+    branches:
+      - '**'
+      - '!main'
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
+  # 
+  # This job checks that the GitHub Secrets have been set correctly and are valid regarding ACS for subsequent jobs to leverage
+  #
+  validate_stack_and_acs_credentials_configured:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check STACK_NAME is set as a GitHub Secret
+        env:
+          stack_name: ${{ secrets.STACK_NAME}}
+        run: |
+          if [[ "${stack_name}" == "" ]]
+          then
+            echo "[Error] - The Secret for STACK_NAME is not set in GitHub Secrets"
+            exit 1
+          fi
+      - name: Check STACK_TOKEN is set as a GitHub Secret
+        env:
+          stack_auth_token: ${{ secrets.STACK_TOKEN}}
+        run: |
+          if [[ "${stack_auth_token}" == "" ]]
+          then
+            echo "[Error] - The Secret for STACK_TOKEN is not set in GitHub Secrets"
+            exit 1
+          fi
+  validate_splunkbase_credentials_configured:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check SPLUNKBASE_USERNAME is set as a GitHub Secret
+        env:
+          splunkbase_username: ${{ secrets.SPLUNKBASE_USERNAME}}
+        run: |
+          if [[ "${splunkbase_username}" == "" ]]
+          then
+            echo "[Error] - The Secret for SPLUNKBASE_USERNAME is not set in GitHub Secrets"
+            exit 1
+          fi
+      - name: Check SPLUNKBASE_PASSWORD is set as a GitHub Secret
+        env:
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          if [[ "${splunkbase_password}" == "" ]]
+          then
+            echo "[Error] - The Secret for SPLUNKBASE_PASSWORD is not set in GitHub Secrets"
+            exit 1
+          fi
+  #
+  #
+  #
+  authenticate_with_splunk:
+    outputs:
+      splunkapi_auth_token: ${{ steps.auth-splunk-api.outputs.api_auth_token }}
+      splunkbase_auth_token: ${{ steps.authenticate-splunkbase.outputs.auth_token }}
+    needs: [validate_splunkbase_credentials_configured,validate_stack_and_acs_credentials_configured]
+    runs-on: ubuntu-latest
+    steps:
+      - name: authenticate with splunkbase
+        id: authenticate-splunkbase
+        env:
+          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          splunkbase_token=$(curl -sX POST --form "username=\"${splunkbase_user}\"" --form "password=\"${splunkbase_password}\"" 'https://splunkbase.splunk.com/api/account:login'| sed -ne 's/.*<id>\(.*\)<\/id>/\1/p')
+          if [[ ${splunkbase_token} == "" ]]
+          then
+            echo "token: ${splunkbase_token}"
+            exit 1
+          else
+            #echo ${splunkbase_token} > /tmp/splunkbase_token
+            echo "auth_token=$(echo ${splunkbase_token})" >> $GITHUB_OUTPUT
+          fi
+      - name: Authenticate with splunk API service
+        id: auth-splunk-api
+        env:
+          splunkbase_user: ${{ secrets.SPLUNKBASE_USERNAME}}
+          splunkbase_password: ${{ secrets.SPLUNKBASE_PASSWORD}}
+        run: |
+          splunk_api_session=$(curl -s -k -u ${splunkbase_user}:${splunkbase_password} --url "https://api.splunk.com/2.0/rest/login/splunk")
+          if [[ $(echo ${splunk_api_session} | jq ".status_code") -eq 200 ]]
+          then 
+            echo "[success] - Obtained Auth Token from Splunk API service"
+            #echo ${splunk_api_session} | jq ".data.token" | sed 's/\"//g' > /tmp/appInspect_token
+            echo "${splunk_api_session}"
+          else
+            echo "[failed] - Something happened that resulted in a non-200 response"
+            echo "${splunk_api_session}"
+            exit 1
+          fi
+          # This base64 encoding is necessary to pass the JWT between jobs
+          api_auth_token=$(echo ${splunk_api_session} | jq -r '.data.token'|base64 -w 0)
+          echo "${api_auth_token}"
+          echo "api_auth_token=${api_auth_token}" >> $GITHUB_OUTPUT
+  
   splunk_appinspect_check:
     runs-on: ubuntu-latest
+    needs: authenticate_with_splunk
     steps:
       - name: Check out repo code
         uses: actions/checkout@v3
+      - name: Install jq for JSON parsing
+        run: sudo apt install -y jq
+      - name: Gather installed private apps from stack
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          acs: staging.admin.splunk.com
+        run: |
+          curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria" \
+          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_private_apps.json
+      - name: 'Upload Current Private Apps'
+        uses: actions/upload-artifact@v3
+        if: success()
         with:
-          fetch-depth: 0
+          name: current_private_apps.json
+          path: /tmp/current_private_apps.json
+          retention-days: 5
+      - name: Fresh Install App Deploy
+        id: fresh-install-app-deploy
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+        run: |
+          mkdir -p /tmp/privateApps
+          # Identify when this is a new stack with no private apps on and deploy them
+          # if app in private apps folder not present on target stack copy it to /tmp/privateApps for deployment
+          for app in $(ls privateApps | grep -v "README.md")
+          do
+            if [[ ! "$(jq -r '.apps[].name' /tmp/current_private_apps.json)" =~ "${app}"  ]]
+            then
+              echo "${app} not present on target"
+              cp -rp privateApps/${app} /tmp/privateApps
+              echo "deployExisting=true"  >> $GITHUB_OUTPUT
+            fi
+          done
+          echo "${deployExisting}"
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v35
@@ -34,34 +162,96 @@ jobs:
           done
           echo "---"
           ls -l /tmp/privateApps
-      - name: Check for local directories
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') }}
+      - name: generate commit hash
+        id: commit
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        uses: prompt/actions-commit-hash@v2
+      - name: Append Commit to App
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        env:
+          commit_short: ${{ steps.commit.outputs.short }}
         run: |
-          if [[ $(find /tmp/appPackages -type d -name local | wc -l) -gt 0 ]]
+          for appconf in $(find /tmp/privateApps -type f -name app.conf)
+          do
+            sed -i -e "s/^version[[:space:]]*=[[:space:]]*\(.*\)/version = \1_${commit_short}/g" ${appconf}
+            echo "---"
+            cat ${appconf}
+          done
+      - name: Check for local directories
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        run: |
+          if [[ $(find /tmp/privateApps -type d -name local | wc -l) -gt 0 ]]
           then
             echo "Local Directories Present"
             exit 1
           fi
       - name: Package Apps for validation
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') }}
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
         run: |
-          mkdir -p /tmp/privatePackages
+          mkdir /tmp/privatePackages
           cd /tmp/privateApps
-          for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| tail -n +2)
+          tar --version
+          for app in $(find . -type d -maxdepth 1 | sed 's/[\.\/]+//g'| sed 's/^\.\///g'| tail -n +2)
           do
             # <TO DO> this section still runs even if no apps need packaging for validation, will have to fix that
-            tar -zcf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
+            COPYFILE_DISABLE=1 tar --format ustar -zcvf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
           done
-      - name: Create matrix of apps for inspection
-        id: create-matrix-app-inspection
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') }}
+      - name: Run Apps through App Inspect
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        env:
+          stack: ${{ secrets.STACK_NAME}}
+          stack_jwt: ${{ secrets.STACK_TOKEN}}
+          appinspect_token: ${{ needs.authenticate_with_splunk.outputs.splunkapi_auth_token }}
         run: |
-          find /tmp/privatePackages -type f | egrep "\.tgz$"
-  splunk_appinspect_matrix:
-   # id: splunk_appinspect_matrix
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repo code
-        uses: actions/checkout@v3
+          appinspect_token=$(echo "${appinspect_token}" | base64 -d)
+          mkdir -p /tmp/appinspect_failures
+          cd /tmp/privatePackages
+          find . -type f
+          for candidateApp in $(ls)
+          do
+            echo "[AppInspect] - ${candidateApp}"
+            AppRequest=$(curl -sX POST 'https://appinspect.splunk.com/v1/app/validate' --header "Authorization: Bearer ${appinspect_token}" --header "Cache-Control: no-cache" --form "app_package=@\"${candidateApp}\"" --form 'included_tags="private_app"')
+            echo "${AppRequest}"
+            # Extract request
+            requestURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"status\")|.href"| sed 's/\"//g')
+            reportURL=$(echo ${AppRequest} |jq ".links[]| select(.rel==\"report\")|.href"| sed 's/\"//g')
+            appInspectStatus=$(curl -sX GET "https://appinspect.splunk.com${requestURL}" --header "Authorization: Bearer ${appinspect_token}")
+            
+            # Loop until request complete or timeout
+            LOOPCOUNTER=0
+            # 60 iterations of 15 seconds is 15 minutes for timeout
+            while [[ $(echo ${appInspectStatus} | jq ".status" | sed 's/\"//g') == "PROCESSING" && ${LOOPCOUNTER} -lt 60 ]]
+            do
+              sleep 15
+              appInspectStatus=$(curl -sX GET "https://appinspect.splunk.com${requestURL}" --header "Authorization: Bearer ${appinspect_token}")
+              let LOOPCOUNTER=LOOPCOUNTER+1
+            done
+
+            if [[ ${LOOPCOUNTER} -eq 60 ]]
+            then
+              echo "[ERROR] - Timeout occurred validating ${candidateApp}"
+              exit 1
+            fi
+
+            if [[ $(echo ${appInspectStatus} | jq ".status" | sed 's/\"//g') == "SUCCESS" ]]
+            then
+              if [[ $(echo ${appInspectStatus} | jq ".info.error") -eq 0 && $(echo ${appInspectStatus} | jq ".info.failure") -eq 0 && $(echo ${appInspectStatus} | jq ".info.manual_check") -eq 0 ]]
+              then
+                echo ${appInspectStatus}
+              else
+                echo "[Error] - App Failed Appinspect, see report for more information (${candidateApp})"
+                curl -sX GET "https://appinspect.splunk.com${reportURL}" --header "Authorization: Bearer ${appinspect_token}" > /tmp/appinspect_failures/${candidateApp}.json
+                exit 1
+              fi
+            else
+              echo "[Error] - Appinspect went to unknown state while validating ${candidateApp}"
+              exit 1
+            fi
+          done
+      - name: 'Upload AppInspect Failures'
+        uses: actions/upload-artifact@v3
+        if: failure()
         with:
-          fetch-depth: 0
+          name: appInspectFailureReports
+          path: /tmp/appinspect_failures/
+          retention-days: 5
