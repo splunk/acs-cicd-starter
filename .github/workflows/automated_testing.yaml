@@ -157,7 +157,7 @@ jobs:
           done
   splunk_appinspect_check:
     runs-on: ubuntu-latest
-    needs: authenticate_with_splunk
+    needs: [authenticate_with_splunk,private_app_check_for_prohibited_config_files]
     steps:
       - name: Check out repo code
         uses: actions/checkout@v3
