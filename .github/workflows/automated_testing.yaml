@@ -294,6 +294,7 @@ jobs:
       - name: create changed indexes matrix
         id: set-matrix
         run: |
+          echo "matrix={\"index\":${{ steps.changed-files.outputs.all_changed_files }}}"
           echo "matrix={\"index\":${{ steps.changed-files.outputs.all_changed_files }}}" >> "$GITHUB_OUTPUT"
   validate_changed_indexes:
     if: ${{ needs.gather_changed_indexes.outputs.matrix != '[]' && needs.gather_changed_indexes.outputs.matrix != '' }}
