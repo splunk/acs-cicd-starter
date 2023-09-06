@@ -1,7 +1,7 @@
 {
    "name": "firewall",
    "datatype": "event",
-   "searchableDays": 80,
+   "searchableDays": 40,
    "maxDataSizeMB": 1024,
    "totalEventCount": "0",
    "totalRawSizeMB": "0"
