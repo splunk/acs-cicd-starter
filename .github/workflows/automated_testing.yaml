@@ -307,3 +307,21 @@ jobs:
           else
             exit 0
           fi
+  gather_changed_indexes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+        with:
+          files: |
+            indexes/*.json
+      - name: output changed indexes to matrix
+        runs: |
+          echo "${{ steps.changed-files.outputs.all_changed_files }}"
+
+  #validate_changed_indexes:
+  #  runs-on:
+  #  steps:
