@@ -260,7 +260,6 @@ jobs:
           path: /tmp/appinspect_failures/
           retention-days: 5
   ip_allow_list_validation:
-    needs: ip_allow_changed
     strategy:
       matrix:
         whitelist: [search-api,hec,s2s,search-ui]
