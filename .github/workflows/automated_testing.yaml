@@ -311,7 +311,7 @@ jobs:
         run: |
           mkdir tmp
           curl -s -o tmp/openapi.json ${api_location}
-          echo "validation_file=/indexes/${index}.json" >> $GITHUB_OUTPUT
+          echo "validation_file=${index}" >> $GITHUB_OUTPUT
       - name: validate JSON against OpenAPI schema
         uses: docker://orrosenblatt/validate-json-action:latest
         env:
