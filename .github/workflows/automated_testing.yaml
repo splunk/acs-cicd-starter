@@ -274,7 +274,8 @@ jobs:
           whitelist: ${{ matrix.whitelist}}
           api_location: ${{ env.json_schema }}
         run: |
-          curl -o /tmp/openapi.json ${api_location}
+          mkdir tmp
+          curl -s -o tmp/openapi.json ${api_location}
           echo "validation_file=/ipAllow/${whitelist}.json" >> $GITHUB_OUTPUT
       - name: validate JSON against OpenAPI schema
         uses: docker://orrosenblatt/validate-json-action:latest
