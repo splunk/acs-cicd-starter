@@ -292,6 +292,7 @@ jobs:
           files: |
             indexes/*.json
       - name: create changed indexes matrix
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
         id: set-matrix
         run: |
           echo "matrix={\"index\":${{ steps.changed-files.outputs.all_changed_files }}}"
