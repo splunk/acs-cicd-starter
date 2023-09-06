@@ -297,7 +297,7 @@ jobs:
           echo "matrix={\"index\":${{ steps.changed-files.outputs.all_changed_files }}}" >> "$GITHUB_OUTPUT"
   validate_changed_indexes:
     strategy:
-      matrix: ${{ needs.gather_changed_indexes.outputs.matrix }}
+      matrix: ${{ fromJSON(needs.gather_changed_indexes.outputs.matrix) }}
     runs-on: ubuntu-latest
     needs: gather_changed_indexes
     steps:
