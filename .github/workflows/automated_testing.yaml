@@ -319,7 +319,7 @@ jobs:
           files: |
             indexes/*.json
       - name: output changed indexes to matrix
-        runs: |
+        run: |
           echo "${{ steps.changed-files.outputs.all_changed_files }}"
 
   #validate_changed_indexes:
