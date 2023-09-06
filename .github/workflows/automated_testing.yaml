@@ -376,11 +376,11 @@ jobs:
       - name: Validate Index Name
         run: | 
           # Index names must consist of only numbers, letters, periods, underscores, and hyphens. 
-         if [[ ! $(cat ${{ matrix.index }} | jq -r '.name' | egrep "^[A-Za-z\d\._-]+$") ]]
-         then
-          echo "[Error] - Index contains invalid characters"
-          exit 1
-        fi
+          if [[ ! $(cat ${{ matrix.index }} | jq -r '.name' | egrep "^[A-Za-z\d\._-]+$") ]]
+          then
+            echo "[Error] - Index contains invalid characters"
+            exit 1
+          fi
   splunkbase_app_validation:
     needs: authenticate_with_splunk
     runs-on: ubuntu-latest
