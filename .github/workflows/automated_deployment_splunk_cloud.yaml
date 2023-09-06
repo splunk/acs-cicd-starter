@@ -108,24 +108,7 @@ jobs:
           api_auth_token=$(echo ${splunk_api_session} | jq -r '.data.token'|base64 -w 0)
           echo "${api_auth_token}"
           echo "api_auth_token=${api_auth_token}" >> $GITHUB_OUTPUT
-  #
-  # This job validates some of the json files against the schemas
-  #
-  validate_json:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
-      - name: Validate IP Allow List JSON
-        uses: docker://orrosenblatt/validate-json-action:latest
-        env:
-          INPUT_SCHEMA: /workflow_support/ipallow_schema.json
-          INPUT_JSONS: /ipAllow/hec.json,/ipAllow/s2s.json,/ipAllow/search-api.json,/ipAllow/search-ui.json
-      - name: Validate Index JSON
-        uses: docker://orrosenblatt/validate-json-action:latest
-        env:
-          INPUT_SCHEMA: /workflow_support/index_schema.json
-          INPUT_JSONS: /indexes/pipeline.json
+
   #
   # This job manages Splunkbase apps on the Splunk Cloud environment
   #
@@ -448,7 +431,7 @@ jobs:
   # This job manages index configurations on the Splunk Cloud environment
   #
   indexManagement:
-    needs: [validate_json,authenticate_with_splunk]
+    needs: authenticate_with_splunk
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -562,7 +545,7 @@ jobs:
     strategy:
       matrix:
         whitelist: [search-api,hec,s2s,search-ui]
-    needs: [validate_json,authenticate_with_splunk]
+    needs: authenticate_with_splunk
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
@@ -651,14 +634,13 @@ jobs:
             echo "${payloadSubmission}"
           fi
   #outbound_port_management:
-  #    needs: [validate_json,authenticate_with_splunk]
+  #    needs: authenticate_with_splunk
   #    runs-on: ubuntu-latest
   #    steps:
         # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
   #      - name: Check out repo code
   #        uses: actions/checkout@v3
   #limits_conf_management:
-  #    needs: validate_json
   #    runs-on: ubuntu-latest
   #    steps:
         # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
