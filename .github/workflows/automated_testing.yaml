@@ -277,7 +277,7 @@ jobs:
   gather_changed_indexes:
     runs-on: ubuntu-latest
     outputs:
-      matrix: "{\"index\":${{ steps.changed-files.outputs.all_changed_files }}}"
+      matrix:"{\"index\":${{ steps.changed-files.outputs.all_changed_files }}}"
     steps:
       - name: Install jq for JSON parsing
         run: sudo apt install -y jq
