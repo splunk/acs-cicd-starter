@@ -1,8 +1,11 @@
 # acs-pipelines
 
+**Disclaimer**:  When using this repo it will be # authorative for many tasks on your Splunk Cloud environment.  If this repo does not reflect the state of your environment when you wire it up then you may find unintended side effects such as changes to index settings, apps being removed, IP allow lists changing, etc.  
+
 ### Using this Repo
 
-- Fork it
+- Clone the structure to your own repo
+- Enable Branch Protections to prevent direct commits to main
 - create a feature branch
 - make a change
 - commit and push it
@@ -10,17 +13,17 @@
 
 ## Secrets
 
-For this to work we need 4 secured secrets populating for our CD pipelines, these are encrypted environment variables to allow management tasks to be performed.
+For this to work we need 4 secured secrets populating for our pipelines, these are encrypted environment variables to allow management tasks to be performed.
 
 > TO DO add steps to update these in github
 
 ### STACK_NAME
 
-This is the stack name that you wish to manage with this repo
+This is the stack name that you wish to manage with your repo
 
-### STACK_AUTH_TOKEN
+### STACK_TOKEN
 
-This is the auth token that has been created within your Splunk Cloud stack so that you can authenticate in the CD pipelines...
+This is the auth token that has been created within your Splunk Cloud stack so that you can authenticate and leverage ACS in your pipelines...
 
 > TO DO  add instructions on how to create this.
 
@@ -34,11 +37,11 @@ The Splunkbase password to go with the above username.
 
 ## Splunk Base App management
 
-When using this repo ACS will be authoratitive for managing Splunkbase apps, so if someone installs a Splunkbase app via the UI and it is not in the splunkbaseApps.json file here then it will be uninstalled when the pipeline runs next.
+When using this repo ACS will be authoratitive for managing Splunkbase apps, so if someone installs a Splunkbase app via the UI and it is not in the `splunkbaseApps.json` file here then it will be uninstalled when the deployment pipeline runs next.
 
 ### App Installation
 
-When installing an app the latest version of the app will be used, you need to add the following code snippet to the file splunkbaseApps.json
+When installing an app the latest version of the app will be used, you need to add the following code snippet to the file `splunkbaseApps.json`
 
 ```
     {
@@ -61,9 +64,11 @@ Add the version parameter to your JSON and set to the version you wish to instal
     }
 ```
 
+**Information**: If the version in your codebase is no longer available from Splunkbase then you may get an error in your pipeline until you update your `splunkbaseApps.json` to represent the present version available in Splunkbase.
+
 ### App Removal
 
-Remove the section from the JSON on the app you wish to uninstall, when the pipeline runs we will check the installed Splunkbase apps and if it is not in splunkbaseApps.json then it will be removed.
+Remove the section from the JSON on the app you wish to uninstall, when the pipeline runs it will check the installed Splunkbase apps and if it is not in `splunkbaseApps.json` then it will be removed.
 
 ### Unmanaged Splunkbase Apps
 
@@ -85,12 +90,11 @@ Only apps that are different in the merge request to what is in main will have a
 
 The Pipeline process is:
 - identify apps that have changed and stash them
+- append the short git commit ID to version in app.conf
 - create tarball of the changed apps
 - run each app through appInspect, first failure will kill pipeline
 - upload any failure reports as artifacts to the pipeline for review
 - If no failures are encountered attempt to install the apps
-
-You currently have to iterate the version number manually for upgrades, want to add a commit id to the end of the version here to prevent issues when it comes to installation.
 
 ### Scope for 0.1
 
@@ -99,7 +103,7 @@ You currently have to iterate the version number manually for upgrades, want to 
 - Validate hec json
 - Validate IP Allow JSON
 - Validate indexes JSON
-- Private Apps??? (initial install working)
+- Private Apps (install and update)
 - splunkBase apps (install and delete working)
 
 #### CD Steps ####
