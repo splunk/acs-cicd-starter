@@ -318,7 +318,7 @@ jobs:
           INPUT_SCHEMA: /tmp/openapi.json
           INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
   splunkbase_app_validation:
-    needs: authentication_with_splunk
+    needs: authenticate_with_splunk
     runs-on: ubuntu-latest
     steps:
       - name: to do
