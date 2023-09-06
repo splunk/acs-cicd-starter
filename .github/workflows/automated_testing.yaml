@@ -260,6 +260,7 @@ jobs:
           path: /tmp/appinspect_failures/
           retention-days: 5
   ip_allow_list_validation:
+    needs: ip_allow_changed
     strategy:
       matrix:
         whitelist: [search-api,hec,s2s,search-ui]
@@ -268,7 +269,14 @@ jobs:
     steps:
       - name: Check out repo code
         uses: actions/checkout@v3
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+        with:
+          files: |
+            ipAllow/${{matrix.whitelist}}.json
       - name: create JSON validation content
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
         id: create_json_validation_content
         env:
           whitelist: ${{ matrix.whitelist}}
@@ -278,15 +286,18 @@ jobs:
           curl -s -o tmp/openapi.json ${api_location}
           echo "validation_file=/ipAllow/${whitelist}.json" >> $GITHUB_OUTPUT
       - name: validate JSON against OpenAPI schema
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
         uses: docker://orrosenblatt/validate-json-action:latest
         env:
           INPUT_SCHEMA: /tmp/openapi.json
           INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
           whitelist: ${{ matrix.whitelist}}
       - name: check entries are valid IP ranges
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
         run: |
           exit 0
       - name: check for 0.0.0.0 and more restrictive rules
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
         run: |
           subnet_count=$(cat ipAllow/${{ matrix.whitelist }}.json| jq -r '.subnets[]' | wc -l)
           all_allow_present=$(cat ipAllow/${{ matrix.whitelist }}.json| jq -r '.subnets[]' | grep -c "0.0.0.0/0")
