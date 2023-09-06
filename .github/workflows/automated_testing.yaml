@@ -376,7 +376,7 @@ jobs:
       - name: Validate Index Name
         run: | 
           # Index names must consist of only numbers, letters, periods, underscores, and hyphens. 
-          if [[ ! $(cat ${{ matrix.index }} | jq -r '.name' | egrep "^[A-Za-z\d\._-]+$") ]]
+          if [[ ! $(cat ${{ matrix.index }} | jq -r '.name' | egrep "^[A-Za-z0-9\._-]+$") ]]
           then
             echo "[Error] - Index contains invalid characters"
             exit 1
