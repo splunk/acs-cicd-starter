@@ -257,7 +257,7 @@ jobs:
         env:
           INPUT_SCHEMA: /tmp/openapi.json
           INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
-          whitelist: ${{ matrix.whitelist}}
+          #whitelist: ${{ matrix.whitelist}}
       - name: check entries are valid IP ranges
         if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
         run: |
@@ -301,6 +301,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: gather_changed_indexes
     steps:
-      - name: test
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: create JSON validation content
+        id: create_json_validation_content
+        env:
+          index: ${{ matrix.index}}
+          api_location: ${{ env.json_schema }}
         run: |
-          echo "${{ matrix.index }}"
+          mkdir tmp
+          curl -s -o tmp/openapi.json ${api_location}
+          echo "validation_file=/indexes/${index}.json" >> $GITHUB_OUTPUT
+      - name: validate JSON against OpenAPI schema
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /tmp/openapi.json
+          INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
+      
