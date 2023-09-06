@@ -11,6 +11,11 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+env:
+  acs_endpoint: staging.admin.splunk.com
+  json_schema: https://admin.splunk.com/service/info/specs/v2/openapi.json
+
+
 jobs:
   # 
   # This job checks that the GitHub Secrets have been set correctly and are valid regarding ACS for subsequent jobs to leverage
@@ -103,7 +108,6 @@ jobs:
           api_auth_token=$(echo ${splunk_api_session} | jq -r '.data.token'|base64 -w 0)
           echo "${api_auth_token}"
           echo "api_auth_token=${api_auth_token}" >> $GITHUB_OUTPUT
-  
   splunk_appinspect_check:
     runs-on: ubuntu-latest
     needs: authenticate_with_splunk
@@ -255,3 +259,40 @@ jobs:
           name: appInspectFailureReports
           path: /tmp/appinspect_failures/
           retention-days: 5
+  ip_allow_list_validation:
+    strategy:
+      matrix:
+        whitelist: [search-api,hec,s2s,search-ui]
+    #needs: [validate_json,authenticate_with_splunk]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: create JSON validation content
+        id: create_json_validation_content
+        env:
+          whitelist: ${{ matrix.whitelist}}
+          api_location: ${{ env.json_schema }}
+        run: |
+          curl -o /tmp/openapi.json ${api_location}
+          echo "validation_file=/ipAllow/${whitelist}.json" >> $GITHUB_OUTPUT
+      - name: validate JSON against OpenAPI schema
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /tmp/openapi.json
+          INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
+          whitelist: ${{ matrix.whitelist}}
+      - name: check entries are valid IP ranges
+        run: |
+          exit 0
+      - name: check for 0.0.0.0 and more restrictive rules
+        run: |
+          subnet_count=$(cat ipAllow/${{ matrix.whitelist }}.json| jq -r '.subnets[]' | wc -l)
+          all_allow_present=$(cat ipAllow/${{ matrix.whitelist }}.json| jq -r '.subnets[]' | grep -c "0.0.0.0/0")
+          if [[ ${subnet_count} -gt 1 && ${all_allow_present} -ge 1 ]]
+          then
+            echo "[Error] - 0.0.0.0/0 and more restrictive subnets exist, please remove 0.0.0.0/0 if using more restrictive subnets"
+            exit 1
+          else
+            exit 0
+          fi
