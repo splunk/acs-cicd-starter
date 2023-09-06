@@ -1,0 +1,8 @@
+{
+   "name": "dns2",
+   "datatype": "event",
+   "searchableDays": 7,
+   "maxDataSizeMB": 1024,
+   "totalEventCount": "0",
+   "totalRawSizeMB": "0"
+}
