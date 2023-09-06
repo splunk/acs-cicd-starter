@@ -11,6 +11,11 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+env:
+  acs_endpoint: staging.admin.splunk.com
+  json_schema: https://admin.splunk.com/service/info/specs/v2/openapi.json
+
+
 jobs:
   # 
   # This job checks that the GitHub Secrets have been set correctly and are valid regarding ACS for subsequent jobs to leverage
@@ -103,7 +108,6 @@ jobs:
           api_auth_token=$(echo ${splunk_api_session} | jq -r '.data.token'|base64 -w 0)
           echo "${api_auth_token}"
           echo "api_auth_token=${api_auth_token}" >> $GITHUB_OUTPUT
-  
   splunk_appinspect_check:
     runs-on: ubuntu-latest
     needs: authenticate_with_splunk
@@ -112,39 +116,6 @@ jobs:
         uses: actions/checkout@v3
       - name: Install jq for JSON parsing
         run: sudo apt install -y jq
-      - name: Gather installed private apps from stack
-        env:
-          stack: ${{ secrets.STACK_NAME}}
-          stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: staging.admin.splunk.com
-        run: |
-          curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria" \
-          --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_private_apps.json
-      - name: 'Upload Current Private Apps'
-        uses: actions/upload-artifact@v3
-        if: success()
-        with:
-          name: current_private_apps.json
-          path: /tmp/current_private_apps.json
-          retention-days: 5
-      - name: Fresh Install App Deploy
-        id: fresh-install-app-deploy
-        env:
-          stack: ${{ secrets.STACK_NAME}}
-        run: |
-          mkdir -p /tmp/privateApps
-          # Identify when this is a new stack with no private apps on and deploy them
-          # if app in private apps folder not present on target stack copy it to /tmp/privateApps for deployment
-          for app in $(ls privateApps | grep -v "README.md")
-          do
-            if [[ ! "$(jq -r '.apps[].name' /tmp/current_private_apps.json)" =~ "${app}"  ]]
-            then
-              echo "${app} not present on target"
-              cp -rp privateApps/${app} /tmp/privateApps
-              echo "deployExisting=true"  >> $GITHUB_OUTPUT
-            fi
-          done
-          echo "${deployExisting}"
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v35
@@ -164,10 +135,10 @@ jobs:
           ls -l /tmp/privateApps
       - name: generate commit hash
         id: commit
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true')  }}
         uses: prompt/actions-commit-hash@v2
       - name: Append Commit to App
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true') }}
         env:
           commit_short: ${{ steps.commit.outputs.short }}
         run: |
@@ -178,7 +149,7 @@ jobs:
             cat ${appconf}
           done
       - name: Check for local directories
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true')  }}
         run: |
           if [[ $(find /tmp/privateApps -type d -name local | wc -l) -gt 0 ]]
           then
@@ -186,7 +157,7 @@ jobs:
             exit 1
           fi
       - name: Package Apps for validation
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true')  }}
         run: |
           mkdir /tmp/privatePackages
           cd /tmp/privateApps
@@ -197,7 +168,7 @@ jobs:
             COPYFILE_DISABLE=1 tar --format ustar -zcvf /tmp/privatePackages/${app}_$(cat ${app}/default/app.conf| grep version | sed 's/[a-z\=\. ]//g').tgz ${app}
           done
       - name: Run Apps through App Inspect
-        if: ${{ (steps.changed-files.outputs.any_changed == 'true') || (steps.fresh-install-app-deploy.outputs.deployExisting =='true') }}
+        if: ${{ (steps.changed-files.outputs.any_changed == 'true')  }}
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
@@ -255,3 +226,95 @@ jobs:
           name: appInspectFailureReports
           path: /tmp/appinspect_failures/
           retention-days: 5
+  ip_allow_list_validation:
+    strategy:
+      matrix:
+        whitelist: [search-api,hec,s2s,search-ui]
+    #needs: [validate_json,authenticate_with_splunk]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+        with:
+          files: |
+            ipAllow/${{matrix.whitelist}}.json
+      - name: create JSON validation content
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        id: create_json_validation_content
+        env:
+          whitelist: ${{ matrix.whitelist}}
+          api_location: ${{ env.json_schema }}
+        run: |
+          mkdir tmp
+          curl -s -o tmp/openapi.json ${api_location}
+          echo "validation_file=/ipAllow/${whitelist}.json" >> $GITHUB_OUTPUT
+      - name: validate JSON against OpenAPI schema
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /tmp/openapi.json
+          INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
+          #whitelist: ${{ matrix.whitelist}}
+      - name: check entries are valid IP ranges
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: |
+          exit 0
+      - name: check for 0.0.0.0 and more restrictive rules
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: |
+          subnet_count=$(cat ipAllow/${{ matrix.whitelist }}.json| jq -r '.subnets[]' | wc -l)
+          all_allow_present=$(cat ipAllow/${{ matrix.whitelist }}.json| jq -r '.subnets[]' | grep -c "0.0.0.0/0")
+          if [[ ${subnet_count} -gt 1 && ${all_allow_present} -ge 1 ]]
+          then
+            echo "[Error] - 0.0.0.0/0 and more restrictive subnets exist, please remove 0.0.0.0/0 if using more restrictive subnets"
+            exit 1
+          else
+            exit 0
+          fi
+  gather_changed_indexes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Install jq for JSON parsing
+        run: sudo apt install -y jq
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+        with:
+          json: true
+          quotepath: false
+          files: |
+            indexes/*.json
+      - name: create changed indexes matrix
+        id: set-matrix
+        run: |
+          echo "matrix={\"index\":${{ steps.changed-files.outputs.all_changed_files }}}" >> "$GITHUB_OUTPUT"
+  validate_changed_indexes:
+    strategy:
+      matrix: ${{ fromJSON(needs.gather_changed_indexes.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    needs: gather_changed_indexes
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v3
+      - name: create JSON validation content
+        id: create_json_validation_content
+        env:
+          index: ${{ matrix.index}}
+          api_location: ${{ env.json_schema }}
+        run: |
+          mkdir tmp
+          curl -s -o tmp/openapi.json ${api_location}
+          echo "validation_file=${index}" >> $GITHUB_OUTPUT
+      - name: validate JSON against OpenAPI schema
+        uses: docker://orrosenblatt/validate-json-action:latest
+        env:
+          INPUT_SCHEMA: /tmp/openapi.json
+          INPUT_JSONS: ${{ steps.create_json_validation_content.outputs.validation_file}}
+      
