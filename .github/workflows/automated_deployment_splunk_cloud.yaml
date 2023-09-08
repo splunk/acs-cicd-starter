@@ -267,7 +267,7 @@ jobs:
         env:
           stack: ${{ secrets.STACK_NAME}}
           stack_jwt: ${{ secrets.STACK_TOKEN}}
-          acs: ${{ env.acs_endpoint }
+          acs: ${{ env.acs_endpoint }}
         run: |
           curl -s "https://${acs}/${stack}/adminconfig/v2/apps/victoria?count=300" \
           --header "Authorization: Bearer ${stack_jwt}" > /tmp/current_private_apps.json
