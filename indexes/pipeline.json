@@ -1,8 +1,0 @@
-{
-   "name": "pipeline",
-   "datatype": "event",
-   "searchableDays": 45,
-   "maxDataSizeMB": 1024,
-   "totalEventCount": "0",
-   "totalRawSizeMB": "0"
-}
