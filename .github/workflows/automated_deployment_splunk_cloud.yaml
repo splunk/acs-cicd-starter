@@ -425,6 +425,15 @@ jobs:
             --header "Authorization: Bearer ${stack_jwt}" \
             --header 'ACS-Legal-Ack: Y' \
             --data-binary "@${candidateApp}")
+            if [[ $(echo ${appInstallation} | jq -r ".status" ) == "installed" ]]
+            then
+              echo "[INFO] - app installed"
+              echo ${appInstallation}
+            else
+              echo [WARN] - App may not of installed correctly, try re-running the job first.
+              echo ${appInstallation}
+              exit 1
+            fi
             echo ${appInstallation}
           done
   #
