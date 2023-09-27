@@ -388,3 +388,6 @@ jobs:
       - name: to do
         run: |
           exit 0
+          # gather apps from json
+          # compare against current Splunk base versions
+          
