@@ -1,3 +1,9 @@
 # Private Apps
 
-Edit your private apps here, they should be folders and not tarballs so you can edit them easily, don't worry we'll take care of packaging them...
+Private Apps can be stored as their respective apps here, they are stored uncompressed to make editing easy.
+
+The automation workflows will package the apps and validate them through app inspect before they are deployed.
+
+The automation workflow adds the git commit short ID to the app version before packaging.
+
+App Inspect will fail if a local directory exists within a private app here presently, so the automation workflows won't even attempt app validation if the app contains a local directory.

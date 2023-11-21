@@ -1,8 +1,8 @@
 https://docs.splunk.com/Documentation/SplunkCloud/8.2.2112/Config/ConfigureIPAllowList
 
-DD - If on merge there are changes to these files CD pipeline diffs new configuration against configuration running in Splunk Cloud and removes entries that are not in local version and adds entries that are, aim is not to make unnecessary calls.
+ACS manages IP allow lists via additions and subtractions rather than submitting the state we would like.  The ipAllow list files in this folder are the desired state.
 
-DD - Targetting Victoria initially so not including IDM UI access and IDM API access
+When deploying changes to IP allow lists the automation validates what is in git against the current state of the Splunk Cloud stack.  Additions and subtractions are then made to ensure Splunk Cloud resembles the configuration within git.
 
 example payload:
 

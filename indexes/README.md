@@ -1,3 +1,3 @@
 # Define Indexes
 
-Each index should be defined as a separate json file, this way we can itterate through changes.  Make the filename the index name just to make it easy for those that follow you...
+In this demo, each index should be defined as a separate json file using the index name as the filename, this way we can itterate through changes.
