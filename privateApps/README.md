@@ -1,4 +1,6 @@
-# Private Apps
+# Manage Private Apps
+
+For detailed information, see official ACS Documentation: [Manage private apps in Splunk Cloud Platform](https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ManageApps).
 
 Private Apps can be stored as their respective apps here, they are stored uncompressed to make editing easy.
 
