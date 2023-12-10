@@ -1,8 +1,8 @@
 # acs-cicd-starter
 
-This is an example repository for using ACS API in Github Actions to manage your Splunk Cloud environment.
+This is an example repository for using [ACS API](https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ACSIntro) in Github Actions to manage your Splunk Cloud environment. In addition to ACS API, Splunk also provides [ACS CLI](https://docs.splunk.com/Documentation/SplunkCloud/latest/Config/ACSCLI) and [ACS Terraform](https://registry.terraform.io/providers/splunk/scp/latest/docs) tools to manage your Splunk Cloud environment.
 
-**Disclaimer**:  When using this repo it will be # authorative for many tasks on your Splunk Cloud environment.  If this repo does not reflect the state of your environment when you wire it up then you may find unintended side effects such as changes to index settings, apps being removed, IP allow lists changing, etc.  
+**Disclaimer**:  When using this repo it will be # authorative for many tasks on your Splunk Cloud environment.  If this repo does not reflect the state of your environment when you wire it up then you may find unintended side effects such as changes to index settings, apps being removed, IP allow lists changing, etc.
 
 ## Using this Repo
 
