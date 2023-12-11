@@ -6,7 +6,7 @@ This is an example repository for using [ACS API](https://docs.splunk.com/Docume
 
 ## Using this Repo
 
-- Clone the structure to your own repo
+- Clone the structure to your own repo or fork it
 - Enable Branch Protections to prevent direct commits to `main`
 - Create a feature branch
 - Make a change
