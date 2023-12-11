@@ -1,10 +1,10 @@
 {
-    "apps":[
+    "apps": [
         {
-            "splunkbaseID":"5483"
+            "splunkbaseID": "5483"
         },
         {
-            "splunkbaseID":"5137"
+            "splunkbaseID": "5137"
         }
     ]
 }
